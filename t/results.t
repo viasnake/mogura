@@ -6,46 +6,49 @@ use File::Temp qw(tempdir);
 use Mojo::File qw(path);
 use Mojo::JSON qw(encode_json);
 use lib 'lib';
-use App::Outcrop::Config;
-use App::Outcrop::Results;
-use App::Outcrop::Scan;
-use App::Outcrop::ResultStream;
+use Mogura::Server::Results;
+use Mogura::ResultStream;
 
-my $root    = tempdir(CLEANUP => 1);
-my $source  = path($root, 'grype.json');
-my $results = App::Outcrop::Results->new(config => App::Outcrop::Config->new(state => $root));
-my $file    = $results->location('a' x 32, 'grype');
+my $root = tempdir(CLEANUP => 1);
+my $source = path($root, 'grype.json');
+my $results = Mogura::Server::Results->new(state => $root);
+is_deeply(
+    $results->row('syft', {name => '不明', version => 0, locations => [{}, {accessPath => '/lib'}]}),
+    ['不明', '0', '', '', '/lib'],
+    'Missing fields and locations leave literal package data intact'
+);
+my $file = $results->location('a' x 32, 'grype');
 my @matches = map {
     {
-        artifact      => {name => '日本語 package-' . $_, version => "$_"},
+        artifact => {name => '日本語 package-' . $_, version => "$_"},
         vulnerability => {
-            id       => "CVE-$_",
+            id => "CVE-$_",
             severity => $_ % 2 ? 'High' : 'Critical',
-            fix      => {versions => ['2.0']}
+            fix => {versions => ['2.0']}
         }
     }
 } 1 .. 125;
 $source->spurt(
     encode_json(
         {
-            matches        => \@matches,
-            descriptor     => {name => 'grype', db => {valid => 1}},
+            matches => \@matches,
+            descriptor => {name => 'grype', db => {valid => 1}},
             ignoredMatches => [{unused => 'x' x 200000}]
         }
     )
 );
 my $revision = $results->revision($source);
 ok($results->build($source, $file, 'grype', $revision), 'Build index from streaming input');
-ok($results->ready($file, $revision),                   'Index revision matches artifact');
+ok($results->ready($file, $revision), 'Index revision matches artifact');
 my $page = $results->page($file, $revision, {});
-is($page->{total},          125,             'Full count');
-is(scalar @{$page->{rows}}, 60,              'Only bounded window returned');
-is($page->{rows}[0][1],     '日本語 package-1', 'Unicode preserved');
-is($page->{rows}[0][4],     '2.0',           'Fix versions projected');
+is($page->{total}, 125, 'Full count');
+is(scalar @{$page->{rows}}, 60, 'Only bounded window returned');
+is($page->{rows}[0][1], '日本語 package-1', 'Unicode preserved');
+is($page->{rows}[0][4], '2.0', 'Fix versions projected');
 $page = $results->page($file, $revision, {start => 120});
 is(scalar @{$page->{rows}}, 5, 'Final partial page');
 $page = $results->page($file, $revision, {query => '日本語 PACKAGE-12'});
-is($page->{count}, 7,   'Case folded substring search across entire artifact');
+is($page->{count}, 7, 'Case folded substring search across entire artifact');
 is($page->{total}, 125, 'Search preserves original total');
 $page = $results->page($file, $revision, {column => 0});
 is($page->{rows}[1][0], 'CVE-2', 'Numeric segments sort naturally');
@@ -57,7 +60,7 @@ $page = $results->page($file, $revision, {query => "%' OR 1=1 --"});
 is($page->{count}, 0, 'Search cannot change SQL or treat punctuation as wildcard');
 
 # Structural checks alone cannot detect valid SQL edits; verify row content too.
-my $db       = $results->connect($file, 0);
+my $db = $results->connect($file, 0);
 my $metadata = $db->selectrow_hashref('SELECT * FROM metadata');
 is(
     $metadata->{source_sha256},
@@ -78,11 +81,11 @@ like($@, qr/count mismatch/, 'Missing row is diagnosed');
 $db->disconnect;
 $results->build($source, $file, 'grype', $revision, force => 1);
 
-my $scanner  = App::Outcrop::Scan->new;
+my $scanner = 'Mogura::ResultStream';
 my $envelope = $scanner->valid_artifact($source, 'grype');
 is_deeply($envelope->{matches}, [], 'Validation retains no full result array');
 is($envelope->{descriptor}{db}{valid}, 1, 'Validation keeps database identity');
-is_deeply($envelope->{ignoredMatches}, [], 'Unused large arrays discarded');
+ok(!exists $envelope->{ignoredMatches}, 'Unused large arrays discarded');
 for my $invalid ('{"matches":[{}]', '{}{}', '{"matches":[{}],"descriptor":',
     '[]', '{"matches":{}}', '{"matches":[],"descriptor":{"name":"syft"}}')
 {
@@ -96,8 +99,8 @@ my $truncated = path($root, 'truncated.json')->spurt('{"matches":[{"artifact":{"
 ok(!eval { $results->build($truncated, $file, 'grype', $results->revision($truncated)); 1 },
     'Interrupted input cannot publish an index');
 ok($results->ready($file, $revision), 'Failed replacement preserves existing index');
-ok(!-e "$file.part",                  'Failed temporary index cleaned up');
-my $empty        = path($root, 'empty.json')->spurt('{"matches":[]}');
+ok(!-e "$file.part", 'Failed temporary index cleaned up');
+my $empty = path($root, 'empty.json')->spurt('{"matches":[]}');
 my $new_revision = $results->revision($empty);
 $results->build($empty, $file, 'grype', $new_revision);
 is($results->page($file, $new_revision, {})->{count}, 0, 'Empty valid result supported');
@@ -105,11 +108,11 @@ ok(!$results->ready($file, $revision), 'Old artifact identity is not served');
 
 # Exercise token boundaries, escapes, and a row larger than the read buffer.
 my $large = path($root, 'large.json');
-my $name  = ('境界"\\' x 30000);
+my $name = ('境界"\\' x 30000);
 $large->spurt(
     encode_json({artifacts => [{name => $name}], descriptor => {name => 'syft'}, source => {}}));
 my @rows;
-App::Outcrop::ResultStream->read($large, 'syft', sub { push @rows, $_[0] });
+Mogura::ResultStream->read($large, 'syft', sub { push @rows, $_[0] });
 is($rows[0]{name}, $name, 'UTF-8 and escapes survive chunk boundaries');
 is($scanner->valid_artifact($large, 'syft')->{descriptor}{name},
     'syft', 'Syft validation uses streaming envelope');

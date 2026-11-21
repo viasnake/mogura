@@ -1,7 +1,14 @@
 {
-  "name": "outcrop-browser-tests",
+  "name": "mogura-development",
   "private": true,
   "type": "module",
-  "scripts": {"test": "node t/results-cache.mjs"},
-  "devDependencies": {"playwright": "1.64.1"}
+  "scripts": {
+    "test": "node t/results-cache.mjs",
+    "build:css": "tailwindcss -i script/styles.css -o lib/Mogura/Server/public/mogura.css --minify"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "playwright": "1.64.1",
+    "tailwindcss": "4.3.3"
+  }
 }

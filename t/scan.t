@@ -2,13 +2,13 @@ use strict;
 use warnings;
 use Test::More;
 use Digest::SHA qw(sha256_hex);
-use File::Temp  qw(tempdir);
-use Mojo::File  qw(path);
-use Mojo::JSON  qw(encode_json);
+use File::Temp qw(tempdir);
+use Mojo::File qw(path);
+use Mojo::JSON qw(encode_json);
 use lib 'lib';
-use App::Outcrop::Config;
-use App::Outcrop::Store;
-use App::Outcrop::Scan;
+use Mogura::Scanner::Config;
+use Mogura::Scanner::Spool;
+use Mogura::Scanner::Scan;
 
 # These two local fixtures exercise real scan orchestration using ordinary
 # temporary directories; no block device or external scanner is involved.
@@ -22,11 +22,11 @@ use App::Outcrop::Scan;
         my ($self, $token) = @_;
         die 'replaced disk' if ($self->failure // '') eq 'identity';
         return {
-            name      => '/dev/example1',
+            name => '/dev/example1',
             'maj:min' => '8:17',
-            fstype    => 'ext4',
-            token     => $token,
-            identity  => {disk => {name => '/dev/example'}, partition => {name => '/dev/example1'}}
+            fstype => 'ext4',
+            token => $token,
+            identity => {disk => {name => '/dev/example'}, partition => {name => '/dev/example1'}}
         };
     }
 
@@ -53,13 +53,13 @@ use App::Outcrop::Scan;
         if (($self->failure // '') eq 'separate-filesystems') {
             Mojo::File::path($root, 'etc/fstab')
                 ->spurt(
-                      "UUID=root / ext4 defaults 0 1\nserver:/export /mnt/nfs nfs defaults 0 0\n"
+                "UUID=root / ext4 defaults 0 1\nserver:/export /mnt/nfs nfs defaults 0 0\n"
                     . "fs-example:/ /mnt/efs efs _netdev,tls 0 0\nUUID=var /var xfs defaults 0 0\n"
                 );
         }
         if (($self->failure // '') eq 'missing-scope') {
             unlink Mojo::File::path($root, 'etc/fstab') or die $!;
-            rmdir Mojo::File::path($root, 'usr')        or die $!;
+            rmdir Mojo::File::path($root, 'usr') or die $!;
         }
         push @{$self->events}, 'mount';
     }
@@ -82,21 +82,25 @@ use App::Outcrop::Scan;
     sub resolve {
         return {kind => 'host', identity => {kind => 'host', partition => {name => '/'}}};
     }
-    sub host_exclusions { return ['./proc', './var/lib/outcrop'] }
-    sub make_readonly   { die 'Live root must never change block-device flags' }
-    sub mount           { die 'Live root must never be mounted' }
-    sub verify_mount    { die 'Live root is not a guest mount' }
-    sub unmount         { die 'Live root must never be unmounted' }
+    sub host_exclusions { return ['/proc', '/var/lib/mogura'] }
+    sub make_readonly { die 'Live root must never change block-device flags' }
+    sub mount { die 'Live root must never be mounted' }
+    sub verify_mount { die 'Live root is not a guest mount' }
+    sub unmount { die 'Live root must never be unmounted' }
 
     package ScanTools;
     use Mojo::Base -base;
 
     has [qw(failure events arguments)];
+    has timeouts => sub { [] };
 
     sub run {
         my ($self, $arguments, %options) = @_;
 
+        kill 'TERM', $$
+            if ($self->failure // '') eq 'stop-at-version' && $arguments->[1] eq 'version';
         return Mojo::JSON::encode_json({version => 'test'}) if $arguments->[1] eq 'version';
+        push @{$self->timeouts}, $options{timeout};
         if ($arguments->[0] =~ /syft$/) {
             $self->arguments($arguments);
             push @{$self->events}, 'syft';
@@ -116,14 +120,14 @@ use App::Outcrop::Scan;
         my ($self, $arguments) = @_;
 
         my $native_sbom = {
-            artifacts  => [],
-            source     => {type => 'directory'},
+            artifacts => [],
+            source => {type => 'directory'},
             descriptor => {name => 'syft', version => 'test'},
         };
         my $cyclonedx_sbom = {
-            bomFormat   => 'CycloneDX',
+            bomFormat => 'CycloneDX',
             specVersion => '1.6',
-            components  => [],
+            components => [],
         };
         for my $argument (@$arguments) {
             if ($argument =~ /^syft-json=(.*)/) {
@@ -143,16 +147,16 @@ use App::Outcrop::Scan;
         my ($self, $file) = @_;
 
         my $database_status = {
-            built         => '2026-01-01T00:00:00Z',
+            built => '2026-01-01T00:00:00Z',
             schemaVersion => 'v6.1.10',
             valid => ($self->failure // '') eq 'stale' ? Mojo::JSON::false : Mojo::JSON::true,
         };
         my $result = {
-            matches    => [],
+            matches => [],
             descriptor => {
-                name    => 'grype',
+                name => 'grype',
                 version => 'test',
-                db      => {status => $database_status},
+                db => {status => $database_status},
             },
         };
         Mojo::File::path($file)->spurt(Mojo::JSON::encode_json($result));
@@ -165,20 +169,24 @@ my $sequence = 0;
 sub scan_case {
     my ($failure, $kind) = @_;
     my $directory = tempdir(CLEANUP => 1);
-    my $config    = App::Outcrop::Config->new(state => $directory, runtime => "$directory/run");
-    my $store     = App::Outcrop::Store->new(config => $config, writable => 1);
-    $store->initialize;
-    my $events     = [];
+    my $config = Mogura::Scanner::Config->new(
+        state => $directory,
+        runtime => "$directory/run",
+        exclude_paths => ['/srv/backups'],
+        command_timeout => 79
+    );
+    my $store = Mogura::Scanner::Spool->new(config => $config);
+    my $events = [];
     my $disk_class = ($kind // '') eq 'host' ? 'HostScanDisk' : 'ScanDisk';
-    my $disk       = $disk_class->new(failure => $failure, events => $events);
-    my $tools      = ScanTools->new(failure => $failure, events => $events);
-    my $scanner    = App::Outcrop::Scan->new(
-        config  => $config,
-        store   => $store,
-        disk    => $disk,
+    my $disk = $disk_class->new(failure => $failure, events => $events);
+    my $tools = ScanTools->new(failure => $failure, events => $events);
+    my $scanner = Mogura::Scanner::Scan->new(
+        config => $config,
+        store => $store,
+        disk => $disk,
         command => $tools
     );
-    my $id   = sprintf('%032x', ++$sequence);
+    my $id = sprintf('%032x', ++$sequence);
     my $scan = $scanner->run({id => $id, tags => ['sample'], note => '', token => ('a' x 64)});
     return ($scan, $store, $events, $directory, $tools);
 }
@@ -214,34 +222,6 @@ for my $failure (qw(identity readonly options mount syft)) {
     );
 }
 
-# Completed scans publish private indexes before exposing completion.
-{
-    my ($scan, $store) = scan_case('');
-    my $results = App::Outcrop::Results->new(config => $store->config);
-    for my $kind (qw(syft grype)) {
-        my $file = $results->published_location($scan->{id}, $kind);
-        ok($results->ready($file, $results->revision($store->artifact($scan->{id}, $kind))),
-            "$kind index ready on scan completion");
-        ok(!-e $results->location($scan->{id}, $kind), 'Scanner does not write Web rebuild files');
-    }
-}
-{
-    no warnings 'redefine';
-    my $build = App::Outcrop::Results->can('build');
-    local *App::Outcrop::Results::build = sub {
-        die 'Injected index failure' if $_[3] eq 'grype';
-        return $build->(@_);
-    };
-    my ($scan, $store) = scan_case('');
-    is($scan->{status}, 'completed', 'Index failure preserves successful audit status');
-    ok($store->artifact($scan->{id}, 'grype'), 'Raw audit survives index failure');
-    like(
-        $scan->{result_index_errors}{grype},
-        qr/Injected index failure/,
-        'Index failure is recorded for recovery'
-    );
-}
-
 # Missing filesystems and scope metadata preserve results and their warnings.
 for my $scope ('separate-filesystems', 'missing-scope') {
     my ($scan, $store, $events) = scan_case($scope);
@@ -261,7 +241,7 @@ for my $scope ('separate-filesystems', 'missing-scope') {
         }
     }
     else {
-        like($warnings, qr/Cannot inspect \/etc\/fstab/,  'Missing fstab warning persists');
+        like($warnings, qr/Cannot inspect \/etc\/fstab/, 'Missing fstab warning persists');
         like($warnings, qr/Uninspected directory: \/usr/, 'Missing directory warning persists');
     }
 }
@@ -280,7 +260,7 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 # A remaining mount is unsafe even when both SBOM formats are usable.
 {
     my ($scan, $store, $events) = scan_case('unmount');
-    is($scan->{status},         'partial',       'Unmount failure retains SBOM as partial');
+    is($scan->{status}, 'partial', 'Unmount failure retains SBOM as partial');
     is($scan->{cleanup_status}, 'needs_cleanup', 'Failed unmount remains explicit');
     ok(!grep($_ eq 'grype', @$events), 'No further work after unmount failure');
     like(join(' ', @{$scan->{warnings}}), qr/busy mount/, 'Cleanup error visible');
@@ -290,8 +270,8 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 {
     my ($scan, $store) = scan_case('cdx');
     is($scan->{status}, 'partial', 'Invalid second output retains valid SBOM');
-    ok($store->artifact($scan->{id},  'syft'), 'Valid native SBOM retained');
-    ok(!$store->artifact($scan->{id}, 'cdx'),  'Incomplete JSON never published');
+    ok($store->artifact($scan->{id}, 'syft'), 'Valid native SBOM retained');
+    ok(!$store->artifact($scan->{id}, 'cdx'), 'Incomplete JSON never published');
 }
 
 # A syntactically valid result is insufficient when DB validation failed.
@@ -304,22 +284,29 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 # A normal stop request follows the same unmount path as other failures.
 {
     my ($scan, $store, $events) = scan_case('stop');
-    is($scan->{status},         'interrupted', 'Normal stop interrupts the scan');
-    is($scan->{cleanup_status}, 'unmounted',   'Normal stop cleans up');
+    is($scan->{status}, 'interrupted', 'Normal stop interrupts the scan');
+    is($scan->{cleanup_status}, 'unmounted', 'Normal stop cleans up');
+}
+
+{
+    my ($scan, undef, $events) = scan_case('stop-at-version');
+    is_deeply($events, [qw(mount unmount)],
+        'Cancellation during version lookup skips scanning and unmounts the disk');
+    is($scan->{status}, 'interrupted', 'Cancellation survives best-effort version lookup');
 }
 
 # A stop signal caught by a best-effort scope check must still stop the scan.
 {
-    my $guest_path = App::Outcrop::Scan->can('guest_path');
-    my $signalled  = 0;
+    my $guest_path = Mogura::Scanner::Scan->can('guest_path');
+    my $signalled = 0;
     no warnings 'redefine';
-    local *App::Outcrop::Scan::guest_path = sub {
+    local *Mogura::Scanner::Scan::guest_path = sub {
         kill 'TERM', $$ unless $signalled++;
         return $guest_path->(@_);
     };
     my ($scan, $store, $events) = scan_case('');
-    is($scan->{status},         'interrupted', 'Stop during scope inspection is honored');
-    is($scan->{cleanup_status}, 'unmounted',   'Stop during scope inspection cleans up');
+    is($scan->{status}, 'interrupted', 'Stop during scope inspection is honored');
+    is($scan->{cleanup_status}, 'unmounted', 'Stop during scope inspection cleans up');
     is_deeply($events, [qw(mount unmount)], 'No scanner starts after the stop request');
 }
 
@@ -344,7 +331,8 @@ for my $kind ('clone', 'host') {
         push @sent, $args->[$index + 1] if $args->[$index] eq '--exclude';
     }
     is_deeply(\@sent, $scan->{exclusions}, "$kind persists its actual exclusions");
-    for my $pattern ('./var/log', './var/crash', './var/lib/systemd/coredump') {
+    is_deeply($tools->timeouts, [79, 79], "$kind applies command_timeout to Syft and Grype");
+    for my $pattern ('./srv/backups', './var/log', './var/crash', './var/lib/systemd/coredump') {
         ok(grep($_ eq $pattern, @sent), "$kind excludes $pattern");
     }
 }
@@ -357,14 +345,14 @@ for my $kind ('clone', 'host') {
     symlink '/usr/os-release', "$root/etc/os-release" or die $!;
     path($root, 'etc/fstab')
         ->spurt("UUID=root / ext4 defaults 0 1\nUUID=var /var ext4 defaults 0 2\n");
-    my $scanner = App::Outcrop::Scan->new;
+    my $scanner = Mogura::Scanner::Scan->new;
     is(
         "" . $scanner->guest_path($root, 'etc/os-release'),
         "$root/usr/os-release",
         'Absolute guest symlink remains inside guest'
     );
     like(
-        join(' ', @{$scanner->inspect_root($root)}),
+        join(' ', @{$scanner->inspect_root($root, [])}),
         qr/Uninspected separate filesystem: \/var/,
         'Split application/data filesystems produce warnings'
     );
@@ -375,15 +363,15 @@ for my $kind ('clone', 'host') {
 for my $failure ('', 'syft', 'grype', 'stop') {
     my ($scan, $store, $events, $directory, $tools) = scan_case($failure, 'host');
     my %expected = ('' => 'completed', syft => 'failed', grype => 'partial', stop => 'interrupted');
-    is($scan->{status},         $expected{$failure}, "Live scan result for '$failure'");
-    is($scan->{cleanup_status}, 'not_needed',        'Live root never needs mount cleanup');
+    is($scan->{status}, $expected{$failure}, "Live scan result for '$failure'");
+    is($scan->{cleanup_status}, 'not_needed', 'Live root never needs mount cleanup');
     ok(!grep($_ eq 'mount' || $_ eq 'unmount', @$events), 'No live mount or unmount was attempted');
     is($tools->arguments->[2], 'dir:/', 'Live scanner source cannot be supplied by the request');
-    ok(grep($_ eq './var/lib/outcrop', @{$tools->arguments}),
+    ok(grep($_ eq './var/lib/mogura', @{$tools->arguments}),
         'Live scanner receives output exclusion');
     like(
         join(' ', @{$scan->{warnings}}),
-        qr/Uninspected live filesystem path.*\.\/proc/,
+        qr/Uninspected live filesystem path.*\/proc/,
         'Live exclusions also produce uninspected warnings'
     );
 }
@@ -391,15 +379,15 @@ for my $failure ('', 'syft', 'grype', 'stop') {
 # A per-disk lock excludes other processes and is released when its holder
 # exits; distinct disks remain independent.
 {
-    my $dir     = tempdir(CLEANUP => 1);
-    my $config  = App::Outcrop::Config->new(state => $dir, runtime => "$dir/run");
-    my $scanner = App::Outcrop::Scan->new(config => $config);
-    my $lock    = $scanner->_acquire_lock('disk-fixture');
-    my $pid     = fork;
+    my $dir = tempdir(CLEANUP => 1);
+    my $config = Mogura::Scanner::Config->new(state => $dir, runtime => "$dir/run");
+    my $scanner = Mogura::Scanner::Scan->new(config => $config);
+    my $lock = $scanner->_acquire_lock('disk-fixture');
+    my $pid = fork;
     die "fork: $!" unless defined $pid;
     if (!$pid) {
         close $lock;
-        my $other    = eval { $scanner->_acquire_lock('disk-fixture') };
+        my $other = eval { $scanner->_acquire_lock('disk-fixture') };
         my $excluded = !$other && $@ =~ /already being processed/;
         my $distinct = eval { $scanner->_acquire_lock('disk-other') };
         POSIX::_exit($excluded && $distinct ? 0 : 1);
@@ -412,7 +400,7 @@ for my $failure ('', 'syft', 'grype', 'stop') {
 
 {
     my ($completed, $store) = scan_case('');
-    my $scanner = App::Outcrop::Scan->new(config => $store->config, store => $store);
+    my $scanner = Mogura::Scanner::Scan->new(config => $store->config, store => $store);
     eval { $scanner->run({id => $completed->{id}, token => 'b' x 64, tags => ['duplicate']}) };
     like($@, qr/already been processed/, 'Duplicate scan ID cannot start again');
     is_deeply($store->get($completed->{id}),

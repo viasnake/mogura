@@ -8,8 +8,8 @@ import {chromium} from 'playwright';
 
 // Use real IndexedDB transactions, Blob persistence and worker lifetimes.
 // An in-memory API mock cannot establish rollback or reopen behavior.
-const scripts = new Map(await Promise.all(['i18n.js', 'result-cache.js', 'results-worker.js', 'results.js'].map(async name => [name, await readFile(`public/${name}`)])));
-const catalogs = Object.fromEntries(await Promise.all(['ja', 'en'].map(async locale => [locale, JSON.parse(await readFile(`public/locales/${locale}.json`, 'utf8'))])));
+const scripts = new Map(await Promise.all(['i18n.js', 'result-cache.js', 'results-worker.js', 'results.js'].map(async name => [name, await readFile(`lib/Mogura/Server/public/${name}`)])));
+const catalogs = Object.fromEntries(await Promise.all(['ja', 'en'].map(async locale => [locale, JSON.parse(await readFile(`lib/Mogura/Server/public/locales/${locale}.json`, 'utf8'))])));
 const requests = [];
 let pending = 0;
 let generation = 0;
@@ -17,6 +17,7 @@ let buildPolls = 0;
 let failBuild = false;
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost');
+  if (url.pathname.startsWith('/scans/')) requests.push(url.href);
   const script = scripts.get(url.pathname.slice(1));
   if (script) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
@@ -36,7 +37,6 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname.includes('/results/')) {
-    requests.push(url.href);
     response.setHeader('Content-Type', 'application/json');
     if (pending-- > 0) {response.writeHead(202); response.end('{"pending":1}'); return;}
     const total = 12050;
@@ -44,6 +44,7 @@ const server = createServer((request, response) => {
     const query = url.searchParams.get('query');
     const count = query === 'target' ? 1 : total;
     const rows = Array.from({length: Math.min(60, count - start)}, (_, i) => [`CVE-${start + i}`, query || 'package', '1.0', 'High', '2.0']);
+    if (start === 0 && !query) rows[0] = ['CVE-0', '不明', '0', 'Unknown', ''];
     response.end(JSON.stringify({revision: url.searchParams.get('version'), total, count, start, rows}));
     return;
   }
@@ -56,7 +57,7 @@ const server = createServer((request, response) => {
         <input data-result-search disabled><span data-result-count></span><p data-result-status>読み込み中…</p>
         <div data-result-viewport style="height:572px;overflow:auto" hidden><table><thead><tr>${[0,1,2,3,4].map(column => `<th><button data-sort="${column}" disabled>Sort<span data-sort-indicator></span></button></th>`).join('')}</tr></thead><tbody></tbody></table></div>
         <nav data-result-pager hidden><button data-page-step="-1">前へ</button><span data-page-range></span><button data-page-step="1">次へ</button></nav>
-      </section>`).join('')}${url.pathname === '/build-ui' ? '<details><summary>その他の操作</summary><form action="/scans/a/results/matches/rebuild" data-result-build="matches"><button>一覧を作成</button><span data-build-message></span><progress data-build-progress hidden></progress></form></details>' : ''}<span data-cache-status hidden></span><button data-clear-cache disabled>Clear</button><script src="/i18n.js" data-messages="${messages}"></script><script src="/results.js"></script></body></html>`);
+      </section>`).join('')}${url.pathname === '/build-ui' ? '<form action="/scans/a/results/matches/rebuild" data-result-build="matches"><button>一覧を作成</button><span data-build-message></span><progress data-build-progress hidden></progress></form>' : ''}<span data-cache-status hidden></span><button data-clear-cache disabled>Clear</button><script src="/i18n.js" data-messages="${messages}"></script><script src="/results.js"></script></body></html>`);
     return;
   }
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -64,7 +65,7 @@ const server = createServer((request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const profile = await mkdtemp(join(tmpdir(), 'outcrop-idb-'));
+const profile = await mkdtemp(join(tmpdir(), 'mogura-idb-'));
 let context;
 const open = async () => {
   context = await chromium.launchPersistentContext(profile, {headless: true});
@@ -195,11 +196,14 @@ try {
     assert(requests.every(url => !url.includes('/download/')), 'raw JSON never requested');
   });
   await test('English counts, search and cache messages reuse pages saved in Japanese', async () => {
+    const firstRow = page.locator('[data-result-table="matches"] tbody tr').first().locator('td');
+    assert.deepEqual(await firstRow.allTextContents(), ['CVE-0', '不明', '0', 'Unknown', '不明']);
     const before = requests.length;
     await page.goto(`${origin}/ui?lang=en`);
     await page.waitForFunction(() => [...document.querySelectorAll('[data-result-count]')].every(node => node.textContent === '12,050 results'));
     await page.waitForFunction(() => !document.querySelector('[data-clear-cache]').disabled);
     assert.equal(requests.length, before, 'language changes reuse the same result cache');
+    assert.deepEqual(await firstRow.allTextContents(), ['CVE-0', '不明', '0', 'Unknown', 'Unknown']);
     const matches = page.locator('[data-result-table="matches"]');
     await matches.locator('[data-result-search]').fill('target');
     await page.waitForFunction(() => document.querySelector('[data-result-table="matches"] [data-result-count]').textContent === '1 / 12,050 results');
@@ -255,7 +259,6 @@ try {
     await page.goto(`${origin}/build-ui`);
     await page.waitForFunction(() => document.querySelector('[data-result-table="packages"] [data-result-count]').textContent === '12,050 件');
     const matches = page.locator('[data-result-table="matches"]');
-    await page.locator('summary').click();
     await page.locator('#draft').fill('unsaved note');
     const siblingRequests = () => requests.filter(url => url.includes('/results/packages?')).length;
     const before = siblingRequests();
