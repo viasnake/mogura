@@ -1,12 +1,14 @@
 .perltidyrc
 Changes
+CONTRIBUTING.md
 LICENSE
 MANIFEST
 Makefile.PL
-README.en.md
 README.md
+SECURITY.md
 cpanfile
 cpanfile.snapshot
+docs/operations.md
 lib/App/Outcrop/Annotations.pm
 lib/App/Outcrop/Command.pm
 lib/App/Outcrop/Config.pm
