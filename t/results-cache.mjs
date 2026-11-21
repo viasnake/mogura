@@ -44,6 +44,7 @@ const server = createServer((request, response) => {
     const query = url.searchParams.get('query');
     const count = query === 'target' ? 1 : total;
     const rows = Array.from({length: Math.min(60, count - start)}, (_, i) => [`CVE-${start + i}`, query || 'package', '1.0', 'High', '2.0']);
+    if (start === 0 && !query) rows[0] = ['CVE-0', '不明', '0', 'Unknown', ''];
     response.end(JSON.stringify({revision: url.searchParams.get('version'), total, count, start, rows}));
     return;
   }
@@ -195,11 +196,14 @@ try {
     assert(requests.every(url => !url.includes('/download/')), 'raw JSON never requested');
   });
   await test('English counts, search and cache messages reuse pages saved in Japanese', async () => {
+    const firstRow = page.locator('[data-result-table="matches"] tbody tr').first().locator('td');
+    assert.deepEqual(await firstRow.allTextContents(), ['CVE-0', '不明', '0', 'Unknown', '不明']);
     const before = requests.length;
     await page.goto(`${origin}/ui?lang=en`);
     await page.waitForFunction(() => [...document.querySelectorAll('[data-result-count]')].every(node => node.textContent === '12,050 results'));
     await page.waitForFunction(() => !document.querySelector('[data-clear-cache]').disabled);
     assert.equal(requests.length, before, 'language changes reuse the same result cache');
+    assert.deepEqual(await firstRow.allTextContents(), ['CVE-0', '不明', '0', 'Unknown', 'Unknown']);
     const matches = page.locator('[data-result-table="matches"]');
     await matches.locator('[data-result-search]').fill('target');
     await page.waitForFunction(() => document.querySelector('[data-result-table="matches"] [data-result-count]').textContent === '1 / 12,050 results');

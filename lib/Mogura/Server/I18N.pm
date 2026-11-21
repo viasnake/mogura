@@ -34,7 +34,7 @@ sub client_messages {
         no_results table_load_failed browser_unsupported packages matches
         cache_save_failed list_separator cache_cleared cache_clear_failed loading
         building rebuild_packages rebuild_matches build_failed build_failed_detail
-        result_format_invalid
+        result_format_invalid unknown
     );
     return {map { $_ => $messages->{$_} } @keys};
 }

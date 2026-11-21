@@ -92,8 +92,6 @@ my $app = Mogura::Server->new(store => $store);
 $app->log->level('error');
 my $t = Test::Mojo->new($app);
 
-# Exercise the browser routes against the persisted scans.
-# Assertions concern data, authorization, and side effects, not page layout.
 $t->get_ok('/history?lang=ja')->status_is(200)->content_unlike(qr/<script>alert/);
 $t->get_ok("/scans/$id")->status_is(200)->content_unlike(qr/<script>alert/);
 $t->get_ok("/scans/$id/download/syft")
@@ -132,7 +130,8 @@ $t->get_ok($result_url)
     ->status_is(200)
     ->json_is('/total', 1)
     ->json_is('/rows/0/0', 'CVE-EXAMPLE-001')
-    ->json_is('/rows/0/1', $payload);
+    ->json_is('/rows/0/1', $payload)
+    ->json_is('/rows/0/2', '');
 $t->get_ok("$result_url&query=missing")->status_is(200)->json_is('/count', 0);
 $t->get_ok("$result_url&column=3&descending=1")->status_is(200);
 $t->get_ok("$result_url&column=0%3BDELETE")->status_is(400);

@@ -12,6 +12,11 @@ use Mogura::ResultStream;
 my $root = tempdir(CLEANUP => 1);
 my $source = path($root, 'grype.json');
 my $results = Mogura::Server::Results->new(state => $root);
+is_deeply(
+    $results->row('syft', {name => '不明', version => 0, locations => [{}, {accessPath => '/lib'}]}),
+    ['不明', '0', '', '', '/lib'],
+    'Missing fields and locations leave literal package data intact'
+);
 my $file = $results->location('a' x 32, 'grype');
 my @matches = map {
     {

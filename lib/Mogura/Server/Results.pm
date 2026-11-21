@@ -16,7 +16,9 @@ sub revision {
     my ($class, $file) = @_;
     my @stat = stat $file;
     die 'Result unavailable' unless @stat;
-    return join '-', @stat[1, 7, 9];
+
+    # A projection change requires a fresh index even for the same source file.
+    return join '-', 'v2', @stat[1, 7, 9];
 }
 
 sub location {
@@ -68,21 +70,23 @@ sub ready {
 
 sub text {
     my ($value) = @_;
-    return defined($value) && !ref($value) && length($value) ? "$value" : '不明';
+    return defined($value) && !ref($value) ? "$value" : '';
 }
 
 sub row {
     my ($self, $kind, $value) = @_;
     die 'Invalid result row' unless ref($value) eq 'HASH';
     if ($kind eq 'syft') {
+        my @paths;
+        for my $location (@{$value->{locations} // []}) {
+            my $path = text($location->{path});
+            $path = text($location->{accessPath}) unless length $path;
+            push @paths, $path if length $path;
+        }
         return [
             map { text($_) } (
-                $value->{name},
-                $value->{version},
-                $value->{type},
-                $value->{foundBy},
-                join(', ',
-                    map { $_->{path} || $_->{accessPath} || '不明' } @{$value->{locations} // []})
+                $value->{name}, $value->{version}, $value->{type},
+                $value->{foundBy}, join(', ', @paths)
             )
         ];
     }
@@ -90,9 +94,11 @@ sub row {
     my $artifact = $value->{artifact} // {};
     return [
         map { text($_) } (
-            $vulnerability->{id}, $artifact->{name},
-            $artifact->{version}, $vulnerability->{severity},
-            join(', ', @{$vulnerability->{fix}{versions} // []})
+            $vulnerability->{id},
+            $artifact->{name},
+            $artifact->{version},
+            $vulnerability->{severity},
+            join(', ', grep { length } map { text($_) } @{$vulnerability->{fix}{versions} // []})
         )
     ];
 }
