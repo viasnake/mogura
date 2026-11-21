@@ -28,8 +28,8 @@ sub client_messages {
     my ($locale) = @_;
     my $messages = messages($locale);
     my @keys     = qw(
-        tag_limit remove_tag inventory_refresh_failed submitting view_progress
-        scan_accepted start_scan saving save_failed tag_added tag_removed saved
+        tag_limit remove_tag inventory_refresh_failed submitting
+        start_scan saving save_failed tag_added tag_removed saved
         result_range result_count result_count_one result_filtered result_filtered_one
         no_results table_load_failed browser_unsupported packages matches
         cache_save_failed list_separator cache_cleared cache_clear_failed loading

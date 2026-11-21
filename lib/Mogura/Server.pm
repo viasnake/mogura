@@ -4,9 +4,7 @@ use utf8;
 
 use Mojo::File qw(path);
 use Mojo::IOLoop::Subprocess;
-use Mojo::Util qw(decode);
 
-use Fcntl            qw(SEEK_END);
 use Cwd              qw(abs_path);
 use Mogura::Protocol qw(random_id valid_id);
 use Mogura::Server::API;
@@ -292,7 +290,6 @@ sub _show_scan {
         artifacts     => $artifacts,
         versions      => \%versions,
         result_states => \%result_states,
-        log           => $self->_read_log_tail($controller, $artifacts->{log}),
     );
     $controller->render(template => 'scan');
 }
@@ -485,19 +482,6 @@ sub _page_number {
 
     return 1 unless ($value // '') =~ /\A[1-9]\d{0,5}\z/;
     return $value;
-}
-
-sub _read_log_tail {
-    my ($self, $controller, $file) = @_;
-
-    return '' unless $file;
-    open my $handle, '<:raw', $file or die "Log: $!";
-    if (-s $handle > 262144) {
-        seek($handle, -262144, SEEK_END) or die "Seek log: $!";
-    }
-
-    local $/;
-    return decode('UTF-8', scalar(<$handle>) // '') // $controller->l('download_log');
 }
 
 sub _download_artifact {

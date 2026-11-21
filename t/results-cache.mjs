@@ -56,7 +56,7 @@ const server = createServer((request, response) => {
         <input data-result-search disabled><span data-result-count></span><p data-result-status>読み込み中…</p>
         <div data-result-viewport style="height:572px;overflow:auto" hidden><table><thead><tr>${[0,1,2,3,4].map(column => `<th><button data-sort="${column}" disabled>Sort<span data-sort-indicator></span></button></th>`).join('')}</tr></thead><tbody></tbody></table></div>
         <nav data-result-pager hidden><button data-page-step="-1">前へ</button><span data-page-range></span><button data-page-step="1">次へ</button></nav>
-      </section>`).join('')}${url.pathname === '/build-ui' ? '<details><summary>その他の操作</summary><form action="/scans/a/results/matches/rebuild" data-result-build="matches"><button>一覧を作成</button><span data-build-message></span><progress data-build-progress hidden></progress></form></details>' : ''}<span data-cache-status hidden></span><button data-clear-cache disabled>Clear</button><script src="/i18n.js" data-messages="${messages}"></script><script src="/results.js"></script></body></html>`);
+      </section>`).join('')}${url.pathname === '/build-ui' ? '<form action="/scans/a/results/matches/rebuild" data-result-build="matches"><button>一覧を作成</button><span data-build-message></span><progress data-build-progress hidden></progress></form>' : ''}<span data-cache-status hidden></span><button data-clear-cache disabled>Clear</button><script src="/i18n.js" data-messages="${messages}"></script><script src="/results.js"></script></body></html>`);
     return;
   }
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -255,7 +255,6 @@ try {
     await page.goto(`${origin}/build-ui`);
     await page.waitForFunction(() => document.querySelector('[data-result-table="packages"] [data-result-count]').textContent === '12,050 件');
     const matches = page.locator('[data-result-table="matches"]');
-    await page.locator('summary').click();
     await page.locator('#draft').fill('unsaved note');
     const siblingRequests = () => requests.filter(url => url.includes('/results/packages?')).length;
     const before = siblingRequests();

@@ -122,7 +122,7 @@ for my $locale (qw(en ja)) {
         ->content_like(qr/Original diagnostic &lt;script&gt;/)
         ->content_unlike(qr/<script>/);
     my $dom  = $t->tx->res->dom;
-    my %rows = map { $_->all_text => $_->next->all_text } $dom->find('details dl dt')->each;
+    my %rows = map { $_->all_text => $_->next->all_text } $dom->find('dl dt')->each;
     my $day  = $locale eq 'en' ? '11/07/2026,' : '2026/11/07';
 
     for my $pair (
