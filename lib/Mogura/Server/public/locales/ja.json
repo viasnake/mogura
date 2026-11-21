@@ -86,7 +86,7 @@
   "db_schema": "脆弱性データの形式バージョン",
   "db_checksum": "脆弱性データのチェックサム",
   "db_source": "脆弱性データの取得元",
-  "other_actions": "その他の操作",
+  "actions": "操作",
   "download_syft": "Syft JSON をダウンロード",
   "download_cdx": "CycloneDX JSON をダウンロード",
   "download_grype": "Grype JSON をダウンロード",

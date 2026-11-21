@@ -86,7 +86,7 @@
   "db_schema": "Vulnerability database schema version",
   "db_checksum": "Vulnerability database checksum",
   "db_source": "Vulnerability database source",
-  "other_actions": "Other actions",
+  "actions": "Actions",
   "download_syft": "Download Syft JSON",
   "download_cdx": "Download CycloneDX JSON",
   "download_grype": "Download Grype JSON",
