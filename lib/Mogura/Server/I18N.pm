@@ -10,25 +10,6 @@ sub supported {
     return defined($locale) && ($locale eq 'ja' || $locale eq 'en');
 }
 
-sub negotiate {
-    my ($header) = @_;
-    my @choices;
-    my $order = 0;
-    for my $entry (split /,/, substr($header // '', 0, 4096)) {
-        next
-            unless $entry =~
-            /\A\s*([a-z]{1,8}(?:-[a-z0-9]{1,8})*|\*)\s*(?:;\s*q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?\s*\z/i;
-        my ($tag, $quality) = (lc($1), defined($2) ? 0 + $2 : 1);
-        next unless $quality > 0;
-        my ($language) = split /-/, $tag;
-        $language = 'en' if $tag eq '*';
-        next unless supported($language);
-        push @choices, {locale => $language, quality => $quality, order => $order++};
-    }
-    @choices = sort { $b->{quality} <=> $a->{quality} || $a->{order} <=> $b->{order} } @choices;
-    return @choices ? $choices[0]{locale} : 'en';
-}
-
 sub messages {
     my ($locale) = @_;
     $locale = 'en' unless supported($locale);
@@ -65,10 +46,7 @@ sub register {
             my ($controller) = @_;
             my $requested    = $controller->req->url->query->param('lang');
             my $saved        = $controller->cookie('mogura_language');
-            my $locale =
-                supported($saved)
-                ? $saved
-                : negotiate($controller->req->headers->accept_language);
+            my $locale       = supported($saved) ? $saved : 'en';
             if ($controller->req->method eq 'GET' && supported($requested)) {
                 $locale = $requested;
                 $controller->cookie(

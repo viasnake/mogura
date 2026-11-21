@@ -28,7 +28,7 @@
                 % }
                 <label class="sr-only" for="language"><%= l('language') %></label>
                 <select class="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-700" id="language" name="lang" data-language-select>
-                % for my $language (qw(ja en)) {
+                % for my $language (qw(en ja)) {
                     <option value="<%= $language %>" lang="<%= $language %>" <%= locale eq $language ? 'selected' : '' %>><%= $language eq 'ja' ? '日本語' : 'English' %></option>
                 % }
                 </select>

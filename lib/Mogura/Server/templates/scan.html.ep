@@ -132,14 +132,22 @@
         <dd class="mb-3 min-w-0 font-mono text-xs wrap-anywhere sm:mb-0"><%= $scan->{id} %></dd>
         <dt class="text-slate-500"><%= l('scan_submitted_utc') %></dt>
         <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= date_time($scan->{created_at}) %></dd>
-        <dt class="text-slate-500"><%= l('scan_started_finished_utc') %></dt>
-        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= date_time($scan->{started_at}) %> / <%= date_time($scan->{finished_at}) %></dd>
-        <dt class="text-slate-500"><%= l('disk_root_device') %></dt>
-        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{target}{disk}{name}) %> / <%= display($scan->{target}{partition}{name}) %></dd>
-        <dt class="text-slate-500">Serial / WWN</dt>
-        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{target}{disk}{serial}) %> / <%= display($scan->{target}{disk}{wwn}) %></dd>
-        <dt class="text-slate-500"><%= l('tool_versions') %></dt>
-        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{syft_version}) %> / <%= display($scan->{grype_version}) %></dd>
+        <dt class="text-slate-500"><%= l('scan_started_utc') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= date_time($scan->{started_at}) %></dd>
+        <dt class="text-slate-500"><%= l('scan_finished_utc') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= date_time($scan->{finished_at}) %></dd>
+        <dt class="text-slate-500"><%= l('disk') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{target}{disk}{name}) %></dd>
+        <dt class="text-slate-500"><%= l('root_device') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{target}{partition}{name}) %></dd>
+        <dt class="text-slate-500"><%= l('serial_number') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{target}{disk}{serial}) %></dd>
+        <dt class="text-slate-500"><%= l('wwn') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{target}{disk}{wwn}) %></dd>
+        <dt class="text-slate-500"><%= l('syft_version') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{syft_version}) %></dd>
+        <dt class="text-slate-500"><%= l('grype_version') %></dt>
+        <dd class="mb-3 min-w-0 wrap-anywhere sm:mb-0"><%= display($scan->{grype_version}) %></dd>
         <dt class="text-slate-500"><%= l('input_sbom_sha256') %></dt>
         <dd class="mb-3 min-w-0 font-mono text-xs wrap-anywhere sm:mb-0"><%= display($scan->{sbom_sha256}) %></dd>
         <dt class="text-slate-500"><%= l('db_built') %></dt>

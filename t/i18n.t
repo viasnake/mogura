@@ -10,23 +10,6 @@ use lib 'lib';
 use Mogura::Server;
 use Mogura::Server::I18N;
 
-my @languages = (
-    [undef,                   'en'],
-    ['fr-FR,de;q=0.9',        'en'],
-    ['ja-JP,en-US;q=0.8',     'ja'],
-    ['en-GB;q=0.5,ja;q=0.9',  'ja'],
-    ['en,ja',                 'en'],
-    ['ja;q=0,en;q=0.5',       'en'],
-    ['JA-jp',                 'ja'],
-    ['ja;q=invalid,en;q=0.5', 'en'],
-    ['../../ja',              'en'],
-);
-
-for my $case (@languages) {
-    is(Mogura::Server::I18N::negotiate($case->[0]),
-        $case->[1], 'Negotiate ' . ($case->[0] // 'missing header'));
-}
-
 # A missing key or placeholder would otherwise surface only during an action.
 my $english  = Mogura::Server::I18N::messages('en');
 my $japanese = Mogura::Server::I18N::messages('ja');
@@ -72,10 +55,18 @@ save_inventory(
 );
 my $id   = 'a' x 32;
 my $scan = {
-    id             => $id,
-    tags           => ['日本語 <script>'],
-    note           => 'Original 日本語 note',
-    created_at     => '2026-11-07T12:34:56Z',
+    id          => $id,
+    tags        => ['日本語 <script>'],
+    note        => 'Original 日本語 note',
+    created_at  => '2026-11-07T12:34:56Z',
+    started_at  => '2026-11-07T12:35:00Z',
+    finished_at => '2026-11-07T12:40:00Z',
+    target      => {
+        disk      => {name => '/dev/sdb', serial => 'ABC', wwn => '0x123'},
+        partition => {name => '/dev/sdb1'}
+    },
+    syft_version   => '1.55.0',
+    grype_version  => '0.121.0',
     status         => 'failed',
     phase          => 'sbom',
     failed_phase   => 'sbom',
@@ -95,14 +86,15 @@ $t->get_ok('/')
     ->text_is('h1', 'Scan');
 $t->get_ok('/' => {'Accept-Language' => 'ja-JP,en;q=0.8'})
     ->status_is(200)
-    ->header_is('Content-Language', 'ja')
-    ->text_is('h1', 'スキャン');
+    ->header_is('Content-Language', 'en')
+    ->text_is('h1',                                     'Scan')
+    ->text_is('select[name="lang"] option:first-child', 'English');
 $t->get_ok('/?lang=../../ja' => {'Accept-Language' => 'fr'})
     ->status_is(200)
     ->header_is('Content-Language', 'en');
 $t->get_ok('/inventory' => {Cookie => 'mogura_language=../../ja', 'Accept-Language' => 'ja'})
     ->status_is(200)
-    ->header_is('Content-Language', 'ja');
+    ->header_is('Content-Language', 'en');
 
 for my $locale (qw(en ja)) {
     my $messages = Mogura::Server::I18N::messages($locale);
@@ -149,6 +141,23 @@ for my $locale (qw(en ja)) {
         ->content_like(qr/\Q$messages->{do_not_disconnect}\E/)
         ->content_like(qr/Original diagnostic &lt;script&gt;/)
         ->content_unlike(qr/<script>/);
+    my $dom  = $t->tx->res->dom;
+    my %rows = map { $_->all_text => $_->next->all_text } $dom->find('details dl dt')->each;
+    my $day  = $locale eq 'en' ? '11/07/2026,' : '2026/11/07';
+
+    for my $pair (
+        [scan_started_utc  => "$day 12:35:00"],
+        [scan_finished_utc => "$day 12:40:00"],
+        [disk              => '/dev/sdb'],
+        [root_device       => '/dev/sdb1'],
+        [serial_number     => 'ABC'],
+        [wwn               => '0x123'],
+        [syft_version      => '1.55.0'],
+        [grype_version     => '0.121.0']
+        )
+    {
+        is($rows{$messages->{$pair->[0]}}, $pair->[1], "$pair->[0] has its own labeled row");
+    }
     my $date = $locale eq 'ja' ? '2026/11/07 12:34:56' : '11/07/2026, 12:34:56';
     like($t->tx->res->text, qr/\Q$date\E/,
         'Display date follows the selected locale and keeps UTC');

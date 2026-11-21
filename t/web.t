@@ -91,11 +91,10 @@ seed_artifact(
 my $app = Mogura::Server->new(store => $store);
 $app->log->level('error');
 my $t = Test::Mojo->new($app);
-$t->ua->on(start => sub { $_[1]->req->headers->accept_language('ja') });
 
 # Exercise the browser routes against the persisted scans.
 # Assertions concern data, authorization, and side effects, not page layout.
-$t->get_ok('/history')->status_is(200)->content_unlike(qr/<script>alert/);
+$t->get_ok('/history?lang=ja')->status_is(200)->content_unlike(qr/<script>alert/);
 $t->get_ok("/scans/$id")->status_is(200)->content_unlike(qr/<script>alert/);
 $t->get_ok("/scans/$id/download/syft")
     ->status_is(200)
