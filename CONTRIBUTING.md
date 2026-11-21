@@ -16,6 +16,10 @@ mise run test
 mise run format:check
 ```
 
+Use indentation to show nesting. Across languages, use a single space wherever
+spacing is needed between tokens. Avoid padding keys, assignments, or comments
+to line up with neighboring lines.
+
 Use Node.js 22 or later to rebuild the bundled stylesheet after changing utility classes and to run the Chromium tests.
 
 ```sh

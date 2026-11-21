@@ -10,15 +10,15 @@ sub read {
     my %arrays = (syft => 'artifacts', grype => 'matches', cdx => 'components');
     die 'Unknown result kind' unless $arrays{$kind};
     my $parser = $class->new(utf8 => 1, cb_unified => 1);
-    $parser->{array}   = $arrays{$kind};
+    $parser->{array} = $arrays{$kind};
     $parser->{consume} = $consume;
-    $parser->{stack}   = [];
+    $parser->{stack} = [];
     open my $handle, '<:raw', $file or die "Open result: $!";
 
     while (1) {
         my $size = CORE::read($handle, my $chunk, 65536);
         die "Read result: $!" unless defined $size;
-        last                  unless $size;
+        last unless $size;
         $digest->add($chunk) if $digest;
         $parser->{offset} += $size;
 
@@ -49,18 +49,18 @@ sub on_any {
     my $stack = $self->{stack};
     if ($mode eq '-') {
         my $frame = pop @$stack;
-        delete $self->{collect_start}       if $frame->{bounded};
+        delete $self->{collect_start} if $frame->{bounded};
         $self->{consume}->($frame->{value}) if $frame->{item} && $self->{consume};
         return;
     }
     my $depth = @$stack;
-    my $key   = $info->{Key};
-    my $item  = $depth == 2 && ($stack->[1]{key} // '') eq $self->{array};
+    my $key = $info->{Key};
+    my $item = $depth == 2 && ($stack->[1]{key} // '') eq $self->{array};
     my $collect =
-           !$depth
+        !$depth
         || ($depth == 1 && ($key // '') eq 'descriptor')
-        || ($depth > 1  && $stack->[-1]{collect})
-        || ($item       && $self->{consume});
+        || ($depth > 1 && $stack->[-1]{collect})
+        || ($item && $self->{consume});
     my $container = $type eq '{' || $type eq '[';
     my $value = $container ? ($type eq '{' ? {} : []) : ($type eq '?' ? ($data ? 1 : 0) : $data);
     if (!$depth) {
@@ -81,7 +81,7 @@ sub on_any {
     {
         my $parent = $stack->[-1]{value};
         if (ref $parent eq 'HASH') { $parent->{$key} = $value; }
-        else                       { push @$parent, $value; }
+        else { push @$parent, $value; }
     }
     if ($container) {
         my $bounded = ($depth == 1 && ($key // '') eq 'descriptor') || ($item && $self->{consume});

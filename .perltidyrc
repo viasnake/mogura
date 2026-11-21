@@ -6,3 +6,6 @@
 --no-cuddled-else
 --continuation-indentation=4
 --no-outdent-long-lines
+-novalign
+--no-logical-padding
+--minimum-space-to-comment=1

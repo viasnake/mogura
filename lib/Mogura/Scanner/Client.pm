@@ -19,8 +19,8 @@ has ua => sub {
 
 sub initialize {
     my ($self) = @_;
-    my $url    = Mojo::URL->new($self->server);
-    my $host   = $url->host // '';
+    my $url = Mojo::URL->new($self->server);
+    my $host = $url->host // '';
     die 'Use an HTTPS server URL (HTTP is allowed on numeric loopback only)'
         unless length($host)
         && !defined($url->userinfo)

@@ -2,7 +2,7 @@ package Mogura::Scanner::Command;
 use Mojo::Base -base;
 
 use IO::Handle ();
-use POSIX       qw(setsid WNOHANG);
+use POSIX qw(setsid WNOHANG);
 use Time::HiRes qw(time sleep);
 
 sub run {
@@ -55,7 +55,7 @@ sub run {
     }
     close $reader;
 
-    die $failure                                             if $failure;
+    die $failure if $failure;
     die "Command failed ($status): $arguments->[0]\n$output" if $status;
     return $output;
 }
@@ -108,7 +108,7 @@ sub _wait_for_exit {
             $$output .= $buffer;
             die 'Command output exceeds 16 MiB' if length($$output) > 16 * 1024 * 1024;
         }
-        return $?                            if waitpid($pid, WNOHANG) == $pid;
+        return $? if waitpid($pid, WNOHANG) == $pid;
         die "Command timed out: $executable" if time >= $deadline;
         sleep 0.05;
     }

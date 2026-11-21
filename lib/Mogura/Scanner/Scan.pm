@@ -10,7 +10,7 @@ use Mogura::ResultStream;
 
 has [qw(config store disk)];
 has cache_slot => 1;
-has command    => sub { Mogura::Scanner::Command->new };
+has command => sub { Mogura::Scanner::Command->new };
 
 sub validate_request {
     my ($self, $request) = @_;
@@ -27,11 +27,11 @@ sub queued {
     $request = $self->validate_request($request);
     return {
         %$request,
-        created_at     => now(),
-        status         => 'queued',
-        phase          => 'queued',
+        created_at => now(),
+        status => 'queued',
+        phase => 'queued',
         cleanup_status => 'not_needed',
-        warnings       => []
+        warnings => []
     };
 }
 
@@ -108,9 +108,9 @@ sub inspect_root {
     my $line_number = 0;
     for my $line (split /\n/, $contents) {
         $line_number++;
-        $line             =~ s/#.*//;
+        $line =~ s/#.*//;
         next unless $line =~ /\S/;
-        $line             =~ s/^\s+//;
+        $line =~ s/^\s+//;
         my @fields = split /\s+/, $line;
         unless (@fields >= 4) {
             push @warnings,
@@ -211,10 +211,10 @@ sub run {
     $request = $self->validate_request($request);
 
     # Descendants retain this lock if the supervisor exits during a command.
-    my $scan_lock  = $self->_acquire_lock('scan-' . $request->{id});
-    my $scan       = $self->_start_scan($request);
+    my $scan_lock = $self->_acquire_lock('scan-' . $request->{id});
+    my $scan = $self->_start_scan($request);
     my $mountpoint = path($self->config->mounts, $scan->{id});
-    my $scan_root  = $mountpoint;
+    my $scan_root = $mountpoint;
     my ($target, $error, $failed_phase);
     local $self->{stop_requested} = 0;
     my ($host_scan, $disk_lock);
@@ -228,7 +228,7 @@ sub run {
     # stop request or command timeout, rejoins the same cleanup path below.
     my $succeeded = eval {
         $self->phase($scan, 'validating');
-        $target    = $self->disk->resolve($request->{token});
+        $target = $self->disk->resolve($request->{token});
         $host_scan = ($target->{kind} // '') eq 'host';
         my $disk_key =
             $host_scan
@@ -275,7 +275,7 @@ sub run {
         1;
     };
     unless ($succeeded) {
-        $error        = $@ || 'Scan failed';
+        $error = $@ || 'Scan failed';
         $failed_phase = $scan->{phase};
     }
 
@@ -289,7 +289,7 @@ sub run {
     }
     $self->_append_log_warnings($scan);
     $scan->{finished_at} = now();
-    $scan->{phase}       = 'finished';
+    $scan->{phase} = 'finished';
     return $self->save_finished($scan);
 }
 
@@ -334,7 +334,7 @@ sub _start_scan {
     my $scan = $self->store->get($request->{id}) // $self->queued($request);
     die 'Scan has already been processed' unless $scan->{status} eq 'queued';
 
-    $scan->{status}     = 'running';
+    $scan->{status} = 'running';
     $scan->{started_at} = now();
     return $self->store->save($scan);
 }
@@ -363,19 +363,19 @@ sub _prepare_tools {
 
     # Explicit configuration and a private working directory prevent either
     # CLI from discovering configuration inside the scanned filesystem.
-    my $directory   = $self->store->directory($scan->{id});
-    my $work        = $directory->child('work')->make_path({mode => 0700});
+    my $directory = $self->store->directory($scan->{id});
+    my $work = $directory->child('work')->make_path({mode => 0700});
     my $tool_config = $work->child('tools.yaml');
     $tool_config->spurt("{}\n");
 
     my $options = {
-        cwd     => "$work",
+        cwd => "$work",
         timeout => $self->config->command_timeout,
-        log     => '' . $directory->child('scan.log'),
-        env     => {
-            SYFT_CHECK_FOR_APP_UPDATE  => 'false',
+        log => '' . $directory->child('scan.log'),
+        env => {
+            SYFT_CHECK_FOR_APP_UPDATE => 'false',
             GRYPE_CHECK_FOR_APP_UPDATE => 'false',
-            GRYPE_DB_CACHE_DIR    => $self->config->state . '/grype-db/slot-' . $self->cache_slot,
+            GRYPE_DB_CACHE_DIR => $self->config->state . '/grype-db/slot-' . $self->cache_slot,
             GRYPE_DB_VALIDATE_AGE => 'true',
             GRYPE_DB_VALIDATE_BY_HASH_ON_START => 'true',
         },
@@ -394,7 +394,7 @@ sub _record_tool_versions {
                 %$options, timeout => 30,);
             decode_json($json);
         };
-        die "Scan interrupted by stop request\n"         if $self->{stop_requested};
+        die "Scan interrupted by stop request\n" if $self->{stop_requested};
         $scan->{"${tool}_version"} = $version->{version} if ref $version eq 'HASH';
     }
 }
@@ -406,9 +406,9 @@ sub _generate_sboms {
     $self->disk->verify_mount($target, $scan_root) unless ($target->{kind} // '') eq 'host';
     $self->_record_tool_versions($scan, $options);
 
-    my $directory   = $self->store->directory($scan->{id});
+    my $directory = $self->store->directory($scan->{id});
     my $syft_output = $directory->child('sbom.syft.json.part');
-    my $cdx_output  = $directory->child('sbom.cdx.json.part');
+    my $cdx_output = $directory->child('sbom.cdx.json.part');
     $self->command->run(
         [
             $self->config->syft,
@@ -430,7 +430,7 @@ sub _generate_sboms {
     # the usable SBOM survives and the result is reported as partial.
     my @outputs = (
         [$syft_output, $directory->child('sbom.syft.json'), 'syft'],
-        [$cdx_output,  $directory->child('sbom.cdx.json'),  'cdx'],
+        [$cdx_output, $directory->child('sbom.cdx.json'), 'cdx'],
     );
     my @validation_errors;
     for my $output (@outputs) {
@@ -455,7 +455,7 @@ sub _match_vulnerabilities {
 
     $self->phase($scan, 'vulnerabilities');
     my $directory = $self->store->directory($scan->{id});
-    my $output    = $directory->child('vulnerabilities.grype.json.part');
+    my $output = $directory->child('vulnerabilities.grype.json.part');
     $self->command->run(
         [
             $self->config->grype, 'sbom:' . $directory->child('sbom.syft.json'),
@@ -469,7 +469,7 @@ sub _match_vulnerabilities {
     my $database = $grype->{descriptor}{db};
 
     $scan->{grype_version} = $grype->{descriptor}{version};
-    $scan->{grype_db}      = $database;
+    $scan->{grype_db} = $database;
 }
 
 sub _verify_grype_database {
@@ -505,7 +505,7 @@ sub _cleanup_after_scan {
 sub _record_failure {
     my ($self, $scan, $error, $failed_phase, $interrupted) = @_;
 
-    $scan->{error}        = "$error";
+    $scan->{error} = "$error";
     $scan->{failed_phase} = $failed_phase;
 
     # Processing outcome and cleanup safety are independent: retaining a valid

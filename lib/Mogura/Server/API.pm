@@ -4,8 +4,8 @@ use Mojo::File qw(path);
 use Mojo::Asset::File;
 use Mojo::JSON qw(to_json);
 use Mojo::IOLoop::Subprocess;
-use Fcntl            qw(:flock);
-use Scalar::Util     qw(weaken);
+use Fcntl qw(:flock);
+use Scalar::Util qw(weaken);
 use Mogura::Protocol qw(valid_id artifact_name);
 use Mogura::Server::Results;
 
@@ -13,10 +13,10 @@ use constant ARTIFACT_LIMIT => 4 * 1024**3;
 
 sub register {
     my ($class, $app) = @_;
-    my $store      = $app->store;
-    my $receiving  = 0;
+    my $store = $app->store;
+    my $receiving = 0;
     my $validating = 0;
-    my $incoming   = path($store->state, 'incoming')->make_path({mode => 0700});
+    my $incoming = path($store->state, 'incoming')->make_path({mode => 0700});
 
     # Serialize allocation and startup sweeping across servers using this state.
     # A validation subprocess inherits the asset lock until it finishes.
@@ -42,15 +42,15 @@ sub register {
                         m{\A/api/jobs/([a-f0-9]{32})/([a-f0-9]{32})/files/(syft|cdx|grype|log)\z};
                     my ($id, $run) = ($1, $2);
                     my $headers = $req->headers;
-                    my $size    = $headers->content_length // '';
+                    my $size = $headers->content_length // '';
                     my $scanner = $store->authenticate($headers->authorization);
                     return
-                           unless _secure_connection($tx)
+                        unless _secure_connection($tx)
                         && defined($scanner)
                         && $store->owns($scanner, $id, $run);
                     return unless $size =~ /\A[0-9]{1,10}\z/ && $size <= ARTIFACT_LIMIT;
                     return
-                           if $headers->transfer_encoding
+                        if $headers->transfer_encoding
                         || $headers->content_encoding
                         || ($headers->content_type // '') ne 'application/octet-stream';
                     return if $receiving >= 2;
@@ -89,7 +89,7 @@ sub register {
             $c->render(
                 json => {
                     scanner => $c->stash('scanner'),
-                    server  =>
+                    server =>
                         scalar $store->db->selectrow_array(
                         "SELECT value FROM settings WHERE name='id'")
                 }
@@ -127,9 +127,9 @@ sub register {
             my $ok = $store->claim(map { $c->stash($_) } qw(scanner id run));
             $c->render(
                 status => ($ok // '') eq 'expired' ? 410 : $ok ? 200 : 409,
-                json   => {
-                    id     => $c->stash('id'),
-                    run    => $c->stash('run'),
+                json => {
+                    id => $c->stash('id'),
+                    run => $c->stash('run'),
                     cancel => ($ok // '') eq 'cancel' ? 1 : 0
                 }
             );
@@ -149,7 +149,7 @@ sub register {
                     $record, $action eq 'complete');
                 $c->render(
                     status => $ok ? 200 : 409,
-                    json   => {id => $c->stash('id'), run => $c->stash('run'), action => $action}
+                    json => {id => $c->stash('id'), run => $c->stash('run'), action => $action}
                 );
             }
         );
@@ -162,8 +162,8 @@ sub register {
             return $c->render(status => 400, json => {}) unless artifact_name($kind);
             return $c->render(status => 429, json => {}) unless $c->tx->{mogura_upload};
             my $asset = $c->req->content->asset;
-            my $size  = $c->req->headers->content_length;
-            my $hash  = $c->req->headers->header('X-Content-SHA256') // '';
+            my $size = $c->req->headers->content_length;
+            my $hash = $c->req->headers->header('X-Content-SHA256') // '';
             return $c->render(status => 400, json => {})
                 unless $hash =~ /\A[a-f0-9]{64}\z/ && $asset->size == $size;
             return $c->render(status => 429, json => {}) if $validating >= 2;
@@ -180,7 +180,7 @@ sub register {
                     if ($error) { $app->log->error("Upload $id/$kind: $error"); }
                     $c->render(
                         status => $error ? 409 : 200,
-                        json   => $error
+                        json => $error
                         ? {}
                         : {id => $id, run => $run, kind => $kind, sha256 => $hash}
                     );
@@ -199,8 +199,8 @@ sub register {
             ) or return;
             my ($id, $kind) = @$item{qw(job kind)};
             my $results = Mogura::Server::Results->new(state => $store->state);
-            my $file    = $results->location($id, $kind);
-            my $lock    = $results->build_lock($file) or return;
+            my $file = $results->location($id, $kind);
+            my $lock = $results->build_lock($file) or return;
             $building = 1;
             Mojo::IOLoop::Subprocess->new->run(
                 sub {
@@ -217,7 +217,7 @@ sub register {
                     $store->db->do(
                         'UPDATE receipts SET indexed=? WHERE job=? AND kind=?',
                         undef, $error ? -1 : 1,
-                        $id,   $kind
+                        $id, $kind
                     );
                     $building = 0;
                 }
@@ -239,7 +239,7 @@ sub _valid_inventory {
     my @targets;
     for my $disk (@{$inv->{disks}}) {
         return
-               unless ref $disk eq 'HASH'
+            unless ref $disk eq 'HASH'
             && ref $disk->{targets} eq 'ARRAY'
             && ref($disk->{reasons} // []) eq 'ARRAY';
         push @targets, @{$disk->{targets}};
@@ -247,8 +247,8 @@ sub _valid_inventory {
     push @targets, $inv->{host} if defined $inv->{host};
     for my $target (@targets) {
         return
-               unless ref $target eq 'HASH'
-            && ref($target->{reasons}     // []) eq 'ARRAY'
+            unless ref $target eq 'HASH'
+            && ref($target->{reasons} // []) eq 'ARRAY'
             && ref($target->{mountpoints} // []) eq 'ARRAY';
         next unless $target->{selectable};
         return

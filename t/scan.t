@@ -2,9 +2,9 @@ use strict;
 use warnings;
 use Test::More;
 use Digest::SHA qw(sha256_hex);
-use File::Temp  qw(tempdir);
-use Mojo::File  qw(path);
-use Mojo::JSON  qw(encode_json);
+use File::Temp qw(tempdir);
+use Mojo::File qw(path);
+use Mojo::JSON qw(encode_json);
 use lib 'lib';
 use Mogura::Scanner::Config;
 use Mogura::Scanner::Spool;
@@ -22,11 +22,11 @@ use Mogura::Scanner::Scan;
         my ($self, $token) = @_;
         die 'replaced disk' if ($self->failure // '') eq 'identity';
         return {
-            name      => '/dev/example1',
+            name => '/dev/example1',
             'maj:min' => '8:17',
-            fstype    => 'ext4',
-            token     => $token,
-            identity  => {disk => {name => '/dev/example'}, partition => {name => '/dev/example1'}}
+            fstype => 'ext4',
+            token => $token,
+            identity => {disk => {name => '/dev/example'}, partition => {name => '/dev/example1'}}
         };
     }
 
@@ -53,13 +53,13 @@ use Mogura::Scanner::Scan;
         if (($self->failure // '') eq 'separate-filesystems') {
             Mojo::File::path($root, 'etc/fstab')
                 ->spurt(
-                      "UUID=root / ext4 defaults 0 1\nserver:/export /mnt/nfs nfs defaults 0 0\n"
+                "UUID=root / ext4 defaults 0 1\nserver:/export /mnt/nfs nfs defaults 0 0\n"
                     . "fs-example:/ /mnt/efs efs _netdev,tls 0 0\nUUID=var /var xfs defaults 0 0\n"
                 );
         }
         if (($self->failure // '') eq 'missing-scope') {
             unlink Mojo::File::path($root, 'etc/fstab') or die $!;
-            rmdir Mojo::File::path($root, 'usr')        or die $!;
+            rmdir Mojo::File::path($root, 'usr') or die $!;
         }
         push @{$self->events}, 'mount';
     }
@@ -83,10 +83,10 @@ use Mogura::Scanner::Scan;
         return {kind => 'host', identity => {kind => 'host', partition => {name => '/'}}};
     }
     sub host_exclusions { return ['./proc', './var/lib/mogura'] }
-    sub make_readonly   { die 'Live root must never change block-device flags' }
-    sub mount           { die 'Live root must never be mounted' }
-    sub verify_mount    { die 'Live root is not a guest mount' }
-    sub unmount         { die 'Live root must never be unmounted' }
+    sub make_readonly { die 'Live root must never change block-device flags' }
+    sub mount { die 'Live root must never be mounted' }
+    sub verify_mount { die 'Live root is not a guest mount' }
+    sub unmount { die 'Live root must never be unmounted' }
 
     package ScanTools;
     use Mojo::Base -base;
@@ -118,14 +118,14 @@ use Mogura::Scanner::Scan;
         my ($self, $arguments) = @_;
 
         my $native_sbom = {
-            artifacts  => [],
-            source     => {type => 'directory'},
+            artifacts => [],
+            source => {type => 'directory'},
             descriptor => {name => 'syft', version => 'test'},
         };
         my $cyclonedx_sbom = {
-            bomFormat   => 'CycloneDX',
+            bomFormat => 'CycloneDX',
             specVersion => '1.6',
-            components  => [],
+            components => [],
         };
         for my $argument (@$arguments) {
             if ($argument =~ /^syft-json=(.*)/) {
@@ -145,16 +145,16 @@ use Mogura::Scanner::Scan;
         my ($self, $file) = @_;
 
         my $database_status = {
-            built         => '2026-01-01T00:00:00Z',
+            built => '2026-01-01T00:00:00Z',
             schemaVersion => 'v6.1.10',
             valid => ($self->failure // '') eq 'stale' ? Mojo::JSON::false : Mojo::JSON::true,
         };
         my $result = {
-            matches    => [],
+            matches => [],
             descriptor => {
-                name    => 'grype',
+                name => 'grype',
                 version => 'test',
-                db      => {status => $database_status},
+                db => {status => $database_status},
             },
         };
         Mojo::File::path($file)->spurt(Mojo::JSON::encode_json($result));
@@ -166,20 +166,20 @@ my $sequence = 0;
 
 sub scan_case {
     my ($failure, $kind) = @_;
-    my $directory  = tempdir(CLEANUP => 1);
-    my $config     = Mogura::Scanner::Config->new(state => $directory, runtime => "$directory/run");
-    my $store      = Mogura::Scanner::Spool->new(config => $config);
-    my $events     = [];
+    my $directory = tempdir(CLEANUP => 1);
+    my $config = Mogura::Scanner::Config->new(state => $directory, runtime => "$directory/run");
+    my $store = Mogura::Scanner::Spool->new(config => $config);
+    my $events = [];
     my $disk_class = ($kind // '') eq 'host' ? 'HostScanDisk' : 'ScanDisk';
-    my $disk       = $disk_class->new(failure => $failure, events => $events);
-    my $tools      = ScanTools->new(failure => $failure, events => $events);
-    my $scanner    = Mogura::Scanner::Scan->new(
-        config  => $config,
-        store   => $store,
-        disk    => $disk,
+    my $disk = $disk_class->new(failure => $failure, events => $events);
+    my $tools = ScanTools->new(failure => $failure, events => $events);
+    my $scanner = Mogura::Scanner::Scan->new(
+        config => $config,
+        store => $store,
+        disk => $disk,
         command => $tools
     );
-    my $id   = sprintf('%032x', ++$sequence);
+    my $id = sprintf('%032x', ++$sequence);
     my $scan = $scanner->run({id => $id, tags => ['sample'], note => '', token => ('a' x 64)});
     return ($scan, $store, $events, $directory, $tools);
 }
@@ -234,7 +234,7 @@ for my $scope ('separate-filesystems', 'missing-scope') {
         }
     }
     else {
-        like($warnings, qr/Cannot inspect \/etc\/fstab/,  'Missing fstab warning persists');
+        like($warnings, qr/Cannot inspect \/etc\/fstab/, 'Missing fstab warning persists');
         like($warnings, qr/Uninspected directory: \/usr/, 'Missing directory warning persists');
     }
 }
@@ -253,7 +253,7 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 # A remaining mount is unsafe even when both SBOM formats are usable.
 {
     my ($scan, $store, $events) = scan_case('unmount');
-    is($scan->{status},         'partial',       'Unmount failure retains SBOM as partial');
+    is($scan->{status}, 'partial', 'Unmount failure retains SBOM as partial');
     is($scan->{cleanup_status}, 'needs_cleanup', 'Failed unmount remains explicit');
     ok(!grep($_ eq 'grype', @$events), 'No further work after unmount failure');
     like(join(' ', @{$scan->{warnings}}), qr/busy mount/, 'Cleanup error visible');
@@ -263,8 +263,8 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 {
     my ($scan, $store) = scan_case('cdx');
     is($scan->{status}, 'partial', 'Invalid second output retains valid SBOM');
-    ok($store->artifact($scan->{id},  'syft'), 'Valid native SBOM retained');
-    ok(!$store->artifact($scan->{id}, 'cdx'),  'Incomplete JSON never published');
+    ok($store->artifact($scan->{id}, 'syft'), 'Valid native SBOM retained');
+    ok(!$store->artifact($scan->{id}, 'cdx'), 'Incomplete JSON never published');
 }
 
 # A syntactically valid result is insufficient when DB validation failed.
@@ -277,8 +277,8 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 # A normal stop request follows the same unmount path as other failures.
 {
     my ($scan, $store, $events) = scan_case('stop');
-    is($scan->{status},         'interrupted', 'Normal stop interrupts the scan');
-    is($scan->{cleanup_status}, 'unmounted',   'Normal stop cleans up');
+    is($scan->{status}, 'interrupted', 'Normal stop interrupts the scan');
+    is($scan->{cleanup_status}, 'unmounted', 'Normal stop cleans up');
 }
 
 {
@@ -291,15 +291,15 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 # A stop signal caught by a best-effort scope check must still stop the scan.
 {
     my $guest_path = Mogura::Scanner::Scan->can('guest_path');
-    my $signalled  = 0;
+    my $signalled = 0;
     no warnings 'redefine';
     local *Mogura::Scanner::Scan::guest_path = sub {
         kill 'TERM', $$ unless $signalled++;
         return $guest_path->(@_);
     };
     my ($scan, $store, $events) = scan_case('');
-    is($scan->{status},         'interrupted', 'Stop during scope inspection is honored');
-    is($scan->{cleanup_status}, 'unmounted',   'Stop during scope inspection cleans up');
+    is($scan->{status}, 'interrupted', 'Stop during scope inspection is honored');
+    is($scan->{cleanup_status}, 'unmounted', 'Stop during scope inspection cleans up');
     is_deeply($events, [qw(mount unmount)], 'No scanner starts after the stop request');
 }
 
@@ -355,8 +355,8 @@ for my $kind ('clone', 'host') {
 for my $failure ('', 'syft', 'grype', 'stop') {
     my ($scan, $store, $events, $directory, $tools) = scan_case($failure, 'host');
     my %expected = ('' => 'completed', syft => 'failed', grype => 'partial', stop => 'interrupted');
-    is($scan->{status},         $expected{$failure}, "Live scan result for '$failure'");
-    is($scan->{cleanup_status}, 'not_needed',        'Live root never needs mount cleanup');
+    is($scan->{status}, $expected{$failure}, "Live scan result for '$failure'");
+    is($scan->{cleanup_status}, 'not_needed', 'Live root never needs mount cleanup');
     ok(!grep($_ eq 'mount' || $_ eq 'unmount', @$events), 'No live mount or unmount was attempted');
     is($tools->arguments->[2], 'dir:/', 'Live scanner source cannot be supplied by the request');
     ok(grep($_ eq './var/lib/mogura', @{$tools->arguments}),
@@ -371,15 +371,15 @@ for my $failure ('', 'syft', 'grype', 'stop') {
 # A per-disk lock excludes other processes and is released when its holder
 # exits; distinct disks remain independent.
 {
-    my $dir     = tempdir(CLEANUP => 1);
-    my $config  = Mogura::Scanner::Config->new(state => $dir, runtime => "$dir/run");
+    my $dir = tempdir(CLEANUP => 1);
+    my $config = Mogura::Scanner::Config->new(state => $dir, runtime => "$dir/run");
     my $scanner = Mogura::Scanner::Scan->new(config => $config);
-    my $lock    = $scanner->_acquire_lock('disk-fixture');
-    my $pid     = fork;
+    my $lock = $scanner->_acquire_lock('disk-fixture');
+    my $pid = fork;
     die "fork: $!" unless defined $pid;
     if (!$pid) {
         close $lock;
-        my $other    = eval { $scanner->_acquire_lock('disk-fixture') };
+        my $other = eval { $scanner->_acquire_lock('disk-fixture') };
         my $excluded = !$other && $@ =~ /already being processed/;
         my $distinct = eval { $scanner->_acquire_lock('disk-other') };
         POSIX::_exit($excluded && $distinct ? 0 : 1);

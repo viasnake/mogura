@@ -10,15 +10,15 @@ sub random_id {
     read($fh, my $bytes, 16) == 16 or die 'Random source unavailable';
     return unpack('H*', $bytes);
 }
-sub now      { strftime('%Y-%m-%dT%H:%M:%SZ', gmtime) }
+sub now { strftime('%Y-%m-%dT%H:%M:%SZ', gmtime) }
 sub valid_id { defined $_[0] && !ref($_[0]) && $_[0] =~ /\A[0-9a-f]{32}\z/ }
 
 sub artifact_name {
     my %files = (
-        syft  => 'sbom.syft.json',
-        cdx   => 'sbom.cdx.json',
+        syft => 'sbom.syft.json',
+        cdx => 'sbom.cdx.json',
         grype => 'vulnerabilities.grype.json',
-        log   => 'scan.log'
+        log => 'scan.log'
     );
     return $files{$_[0] // ''};
 }

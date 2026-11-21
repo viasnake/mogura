@@ -2,18 +2,18 @@ use strict;
 use warnings;
 use Test::More;
 use Errno qw(EIO);
-use File::Temp  qw(tempdir);
-use Mojo::File  qw(path);
+use File::Temp qw(tempdir);
+use Mojo::File qw(path);
 use Time::HiRes qw(time);
 use lib 'lib';
 use Mogura::Scanner::Command;
 
 my $command = Mogura::Scanner::Command->new;
-my $dir     = tempdir(CLEANUP => 1);
+my $dir = tempdir(CLEANUP => 1);
 
 # Metacharacters are literal arguments, never shell input.
 my $argument = '$(touch unsafe); `touch unsafe`';
-my $result   = $command->run([$^X, '-e', 'print $ARGV[0]', $argument], cwd => $dir);
+my $result = $command->run([$^X, '-e', 'print $ARGV[0]', $argument], cwd => $dir);
 is($result, $argument, 'Shell metacharacters stay literal');
 ok(!-e "$dir/unsafe", 'No shell side effects');
 
@@ -39,10 +39,10 @@ my $output = "$dir/result.json.part";
 $command->run(
     [$^X, '-e', 'print q({"matches":[]}); print STDERR q(warning)'],
     stdout => $output,
-    log    => "$dir/log"
+    log => "$dir/log"
 );
-is(path($output)->slurp,    '{"matches":[]}', 'Artifact stdout is separate from stderr');
-is(path("$dir/log")->slurp, 'warning',        'Warnings remain in scan log');
+is(path($output)->slurp, '{"matches":[]}', 'Artifact stdout is separate from stderr');
+is(path("$dir/log")->slurp, 'warning', 'Warnings remain in scan log');
 
 # Reaping the immediate child is insufficient if its descendants stay alive.
 my $descendant_program = <<'PERL';
@@ -61,6 +61,6 @@ my $pid_file = "$dir/descendant.pid";
 eval { $command->run([$^X, '-e', $descendant_program, $pid_file], timeout => 0.3); };
 like($@, qr/timed out/, 'Timeout also handles a CLI with descendants');
 my $child = path($pid_file)->slurp;
-my $stat  = -f "/proc/$child/stat" ? path("/proc/$child/stat")->slurp : '';
+my $stat = -f "/proc/$child/stat" ? path("/proc/$child/stat")->slurp : '';
 ok(!$stat || $stat =~ /\) Z /, 'CLI descendant is terminated (possibly awaiting init reap)');
 done_testing;

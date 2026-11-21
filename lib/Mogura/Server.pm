@@ -5,7 +5,7 @@ use utf8;
 use Mojo::File qw(path);
 use Mojo::IOLoop::Subprocess;
 
-use Cwd              qw(abs_path);
+use Cwd qw(abs_path);
 use Mogura::Protocol qw(random_id valid_id);
 use Mogura::Server::API;
 use Mogura::Server::I18N;
@@ -115,8 +115,8 @@ sub _exclusion_reasons {
             qr/\A(?:Ambiguous filesystem|Partition table present)/,
             $controller->l('ambiguous_layout')
         ],
-        [qr/\AOnly ext4/,                       $controller->l('unsupported_filesystem')],
-        [qr/\ABIOS boot partition:/,            $controller->l('bios_boot')],
+        [qr/\AOnly ext4/, $controller->l('unsupported_filesystem')],
+        [qr/\ABIOS boot partition:/, $controller->l('bios_boot')],
         [qr/\ACannot resolve scanner storage:/, $controller->l('storage_unresolved')],
     );
     my %seen;
@@ -165,15 +165,15 @@ sub _protect_request {
         )
     );
     $headers->header('X-Content-Type-Options' => 'nosniff');
-    $headers->header('Referrer-Policy'        => 'no-referrer');
+    $headers->header('Referrer-Policy' => 'no-referrer');
     $headers->cache_control('no-store');
 }
 
 sub _inventory_page {
     my ($self, $controller) = @_;
-    my $page  = $self->_page_number($controller->param('page'));
+    my $page = $self->_page_number($controller->param('page'));
     my $items = $self->store->inventories($page);
-    my $more  = @$items > 4;
+    my $more = @$items > 4;
     pop @$items if $more;
     $controller->stash(inventory => $items, page => $page, more => $more);
 }
@@ -189,17 +189,17 @@ sub _show_index {
 sub _show_history {
     my ($self, $controller) = @_;
 
-    my $tag      = substr($controller->param('tag') // '', 0, 120);
-    my $page     = $self->_page_number($controller->param('page'));
-    my $history  = $self->store->history($tag, $page);
+    my $tag = substr($controller->param('tag') // '', 0, 120);
+    my $page = $self->_page_number($controller->param('page'));
+    my $history = $self->store->history($tag, $page);
     my $has_more = @$history > 50;
     pop @$history if $has_more;
 
     $controller->stash(
         history => $history,
-        tag     => $tag,
-        page    => $page,
-        more    => $has_more,
+        tag => $tag,
+        page => $page,
+        more => $has_more,
     );
     $controller->render(template => 'history');
 }
@@ -209,13 +209,13 @@ sub _start_scan {
 
     return $controller->render(text => $controller->l('invalid_csrf'), status => 403)
         if $controller->validation->csrf_protect->has_error('csrf_token');
-    my @tags      = @{$controller->every_param('tags')};
+    my @tags = @{$controller->every_param('tags')};
     my $draft_tag = $controller->param('new_tag') // '';
     push @tags, $draft_tag if $draft_tag =~ /\S/;
     my $request = {
-        id    => $controller->param('scan_id'),
-        tags  => eval { Mogura::Server::Tags->validate(\@tags) },
-        note  => $controller->param('note') // '',
+        id => $controller->param('scan_id'),
+        tags => eval { Mogura::Server::Tags->validate(\@tags) },
+        note => $controller->param('note') // '',
         token => $controller->param('target'),
     };
     return $controller->render(text => $controller->l('invalid_tags'), status => 400)
@@ -238,9 +238,9 @@ sub _submission_response {
     if (($controller->req->headers->accept // '') =~ /application\/json/) {
         return $controller->render(
             status => $status,
-            json   => {
-                id      => $id,
-                url     => "/scans/$id",
+            json => {
+                id => $id,
+                url => "/scans/$id",
                 next_id => random_id(),
             }
         );
@@ -262,7 +262,7 @@ sub _show_scan {
     my $host = ($scan->{target}{kind} // '') eq 'host';
     $scan->{removal} = $host ? 'system_volume' : 'do_not_disconnect';
     if (
-          !$host
+        !$host
         && $scan->{online}
         && $scan->{cleanup_status} eq 'unmounted'
         && $self->store->selectable($scan->{scanner_id}, $scan->{token})
@@ -281,14 +281,14 @@ sub _show_scan {
     for my $kind (qw(syft grype)) {
         next unless $artifacts->{$kind};
         my $revision = $results->revision($artifacts->{$kind});
-        my $file     = $results->available($scan->{id}, $kind, $revision);
-        $versions{$kind}      = $results->version($file, $revision) if $file;
+        my $file = $results->available($scan->{id}, $kind, $revision);
+        $versions{$kind} = $results->version($file, $revision) if $file;
         $result_states{$kind} = $results->build_status($results->location($scan->{id}, $kind));
     }
     $controller->stash(
-        scan          => $scan,
-        artifacts     => $artifacts,
-        versions      => \%versions,
+        scan => $scan,
+        artifacts => $artifacts,
+        versions => \%versions,
         result_states => \%result_states,
     );
     $controller->render(template => 'scan');
@@ -296,25 +296,25 @@ sub _show_scan {
 
 sub _result_page {
     my ($self, $controller) = @_;
-    my ($id,   $kind)       = map { $controller->param($_) // '' } qw(id kind);
+    my ($id, $kind) = map { $controller->param($_) // '' } qw(id kind);
     return $controller->reply->not_found unless $kind eq 'syft' || $kind eq 'grype';
     my $source = $self->store->artifact($id, $kind);
     return $controller->reply->not_found unless $source;
-    my $results  = Mogura::Server::Results->new(state => $self->store->state);
+    my $results = Mogura::Server::Results->new(state => $self->store->state);
     my $revision = $results->revision($source);
-    my $file     = $results->available($id, $kind, $revision);
+    my $file = $results->available($id, $kind, $revision);
     return $controller->render(
         status => 409,
-        json   => {error => $controller->l('create_list_first')}
+        json => {error => $controller->l('create_list_first')}
     ) unless $file;
     my $version = $results->version($file, $revision);
     return $controller->render(status => 409, json => {error => $controller->l('results_changed')})
         unless ($controller->param('version') // '') eq $version;
     my $request = {
-        version    => $version,
-        query      => $controller->param('query') // '',
-        start      => $controller->param('start') // '0',
-        column     => $controller->param('column'),
+        version => $version,
+        query => $controller->param('query') // '',
+        start => $controller->param('start') // '0',
+        column => $controller->param('column'),
         descending => ($controller->param('descending') // '') eq '1',
     };
     return $controller->render(status => 400, json => {error => $controller->l('invalid_search')})
@@ -341,7 +341,7 @@ sub _result_page {
                 $self->log->error("Result query $key: $error");
                 $controller->render(
                     status => 500,
-                    json   => {error => $controller->l('result_load_failed')}
+                    json => {error => $controller->l('result_load_failed')}
                 );
             }
             else {
@@ -364,15 +364,15 @@ sub _rebuild_result {
     my $source = $self->store->artifact($id, $kind);
     return $controller->reply->not_found unless $source;
     my $results = Mogura::Server::Results->new(state => $self->store->state);
-    my $file    = $results->location($id, $kind);
-    my $lock    = $results->build_lock($file);
+    my $file = $results->location($id, $kind);
+    my $lock = $results->build_lock($file);
     return $controller->render(status => 409, json => {error => $controller->l('wait_build')})
         unless $lock;
     my $revision = $results->revision($source);
-    my $status   = {state => 'running', token => random_id()};
+    my $status = {state => 'running', token => random_id()};
     $results->save_build_status($file, $status);
     my $process = Mojo::IOLoop::Subprocess->new;
-    my $key     = "$id-$kind";
+    my $key = "$id-$kind";
     $self->{result_jobs}{$key} = $process;
     $process->run(
         sub {
@@ -399,7 +399,7 @@ sub _rebuild_result {
     );
     return $controller->render(
         status => 202,
-        json   => {
+        json => {
             status_url => "/scans/$id/results/$kind/build?token=$status->{token}",
         }
     );
@@ -407,19 +407,19 @@ sub _rebuild_result {
 
 sub _result_build_status {
     my ($self, $controller) = @_;
-    my ($id,   $kind)       = map { $controller->param($_) // '' } qw(id kind);
+    my ($id, $kind) = map { $controller->param($_) // '' } qw(id kind);
     return $controller->reply->not_found unless $kind eq 'syft' || $kind eq 'grype';
     return $controller->reply->not_found unless $self->store->artifact($id, $kind);
     my $results = Mogura::Server::Results->new(state => $self->store->state);
-    my $status  = $results->build_status($results->location($id, $kind));
+    my $status = $results->build_status($results->location($id, $kind));
     return $controller->render(status => 409, json => {error => $controller->l('refresh_status')})
         unless ($controller->param('token') // '') eq ($status->{token} // '');
     my $response = {state => $status->{state}};
 
     if ($status->{state} eq 'ready') {
-        my $source   = $self->store->artifact($id, $kind);
+        my $source = $self->store->artifact($id, $kind);
         my $revision = $results->revision($source);
-        my $file     = $results->available($id, $kind, $revision);
+        my $file = $results->available($id, $kind, $revision);
         if ($file) {
             $response->{url} =
                 "/scans/$id/results/$kind?version=" . $results->version($file, $revision);

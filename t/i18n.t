@@ -10,12 +10,12 @@ use Mogura::Server;
 use Mogura::Server::I18N;
 
 # A missing key or placeholder would otherwise surface only during an action.
-my $english  = Mogura::Server::I18N::messages('en');
+my $english = Mogura::Server::I18N::messages('en');
 my $japanese = Mogura::Server::I18N::messages('ja');
 is_deeply([sort keys %$english], [sort keys %$japanese], 'Both catalogs cover the same messages');
 my @mismatched;
 for my $key (sort keys %$english) {
-    my @en = sort $english->{$key}  =~ /(\{[a-z_]+\})/g;
+    my @en = sort $english->{$key} =~ /(\{[a-z_]+\})/g;
     my @ja = sort $japanese->{$key} =~ /(\{[a-z_]+\})/g;
     push @mismatched, $key if join(',', @ja) ne join(',', @en);
 }
@@ -29,29 +29,29 @@ save_inventory(
     $store,
     {
         updated_at => time,
-        errors     => [],
-        disks      => [{name => '/dev/example', targets => [], reasons => [$diagnostic]}]
+        errors => [],
+        disks => [{name => '/dev/example', targets => [], reasons => [$diagnostic]}]
     }
 );
-my $id   = 'a' x 32;
+my $id = 'a' x 32;
 my $scan = {
-    id          => $id,
-    tags        => ['日本語 <script>'],
-    note        => 'Original 日本語 note',
-    created_at  => '2026-11-07T12:34:56Z',
-    started_at  => '2026-11-07T12:35:00Z',
+    id => $id,
+    tags => ['日本語 <script>'],
+    note => 'Original 日本語 note',
+    created_at => '2026-11-07T12:34:56Z',
+    started_at => '2026-11-07T12:35:00Z',
     finished_at => '2026-11-07T12:40:00Z',
-    target      => {
-        disk      => {name => '/dev/sdb', serial => 'ABC', wwn => '0x123'},
+    target => {
+        disk => {name => '/dev/sdb', serial => 'ABC', wwn => '0x123'},
         partition => {name => '/dev/sdb1'}
     },
-    syft_version   => '1.55.0',
-    grype_version  => '0.121.0',
-    status         => 'failed',
-    phase          => 'sbom',
-    failed_phase   => 'sbom',
+    syft_version => '1.55.0',
+    grype_version => '0.121.0',
+    status => 'failed',
+    phase => 'sbom',
+    failed_phase => 'sbom',
     cleanup_status => 'needs_cleanup',
-    error          => 'Original diagnostic <script>',
+    error => 'Original diagnostic <script>',
 };
 seed_scan($store, $scan);
 $scan = $store->get($id);
@@ -67,7 +67,7 @@ $t->get_ok('/')
 $t->get_ok('/' => {'Accept-Language' => 'ja-JP,en;q=0.8'})
     ->status_is(200)
     ->header_is('Content-Language', 'en')
-    ->text_is('h1',                                     'Scan')
+    ->text_is('h1', 'Scan')
     ->text_is('select[name="lang"] option:first-child', 'English');
 $t->get_ok('/?lang=../../ja' => {'Accept-Language' => 'fr'})
     ->status_is(200)
@@ -97,7 +97,7 @@ for my $locale (qw(en ja)) {
         $messages->{save_failed},
         'JavaScript receives the same locale as the page'
     );
-    my $csrf     = $t->tx->res->dom->at('input[name="csrf_token"]')->attr('value');
+    my $csrf = $t->tx->res->dom->at('input[name="csrf_token"]')->attr('value');
     my $opposite = $locale eq 'en' ? 'ja' : 'en';
     $t->get_ok('/history?tag=example&page=2' => {'Accept-Language' => $opposite})
         ->status_is(200)
@@ -121,19 +121,19 @@ for my $locale (qw(en ja)) {
         ->content_like(qr/\Q$messages->{do_not_disconnect}\E/)
         ->content_like(qr/Original diagnostic &lt;script&gt;/)
         ->content_unlike(qr/<script>/);
-    my $dom  = $t->tx->res->dom;
+    my $dom = $t->tx->res->dom;
     my %rows = map { $_->all_text => $_->next->all_text } $dom->find('dl dt')->each;
-    my $day  = $locale eq 'en' ? '11/07/2026,' : '2026/11/07';
+    my $day = $locale eq 'en' ? '11/07/2026,' : '2026/11/07';
 
     for my $pair (
-        [scan_started_utc  => "$day 12:35:00"],
+        [scan_started_utc => "$day 12:35:00"],
         [scan_finished_utc => "$day 12:40:00"],
-        [disk              => '/dev/sdb'],
-        [root_device       => '/dev/sdb1'],
-        [serial_number     => 'ABC'],
-        [wwn               => '0x123'],
-        [syft_version      => '1.55.0'],
-        [grype_version     => '0.121.0']
+        [disk => '/dev/sdb'],
+        [root_device => '/dev/sdb1'],
+        [serial_number => 'ABC'],
+        [wwn => '0x123'],
+        [syft_version => '1.55.0'],
+        [grype_version => '0.121.0']
         )
     {
         is($rows{$messages->{$pair->[0]}}, $pair->[1], "$pair->[0] has its own labeled row");
@@ -144,7 +144,7 @@ for my $locale (qw(en ja)) {
     $t->get_ok("/scans/$id/download/metadata")
         ->status_is(200)
         ->json_is('/created_at', $scan->{created_at})
-        ->json_is('/note',       $scan->{note});
+        ->json_is('/note', $scan->{note});
     $t->get_ok('/missing-page')->status_is(404)->text_is('h1', $messages->{not_found});
 }
 is_deeply($store->get($id), $scan, 'Language changes leave the stored scan and annotations intact');

@@ -2,9 +2,9 @@
 
 BEGIN {
     if (${^TAINT}) {
-        my ($program) = $0  =~ /\A([^\x00]+)\z/;
-        my ($perl)    = $^X =~ m{\A(/[^\x00]+)\z};
-        my @args      = map { /\A([^\x00]*)\z/s; $1 } @ARGV;
+        my ($program) = $0 =~ /\A([^\x00]+)\z/;
+        my ($perl) = $^X =~ m{\A(/[^\x00]+)\z};
+        my @args = map { /\A([^\x00]*)\z/s; $1 } @ARGV;
         $ENV{PATH} = "/usr/sbin:/usr/bin:/sbin:/bin";
         delete @ENV{qw(IFS CDPATH ENV BASH_ENV)};
         if ($> == 0) {
@@ -134,7 +134,7 @@ if ($mode eq 'scanner') {
         or die $help;
     require Mogura::Scanner;
     my $client = Mogura::Scanner::Client->new(
-        server     => delete $opts{server},
+        server => delete $opts{server},
         token_file => delete $opts{'token-file'}
     );
     $opts{spool_limit} = delete $opts{'spool-limit'} if exists $opts{'spool-limit'};
@@ -146,7 +146,7 @@ if ($mode eq 'scanner') {
 }
 die $help unless $mode =~ /\A(?:server|register|issue|revoke)\z/;
 die "Run the server and token administration as its unprivileged owner\n" unless $>;
-my $id      = $mode eq 'server' ? undef : shift;
+my $id = $mode eq 'server' ? undef : shift;
 my @options = ('state=s', $mode eq 'server' ? 'listen=s' : $mode eq 'revoke' ? () : 'token-file=s');
 GetOptionsFromArray(\@ARGV, \%opts, @options) && !@ARGV or die $help;
 umask 0077;
@@ -157,7 +157,7 @@ if ($mode eq 'server') {
     require Mogura::Server;
     require Mojo::Server::Daemon;
     Mojo::Server::Daemon->new(
-        app    => Mogura::Server->new(store => $store),
+        app => Mogura::Server->new(store => $store),
         listen => [$opts{listen} // 'http://127.0.0.1:8080']
     )->run;
     exit 0;
@@ -178,7 +178,7 @@ sysopen my $fh, $file, Fcntl::O_WRONLY() | Fcntl::O_CREAT() | Fcntl::O_EXCL(), 0
 my $token = Mogura::Protocol::random_id() . Mogura::Protocol::random_id();
 eval {
     print {$fh} "$token\n" or die "Write token: $!";
-    close $fh              or die "Close token: $!";
+    close $fh or die "Close token: $!";
     if ($mode eq 'register') { $store->register($id, $token) }
     else {
         die "Unknown scanner\n"

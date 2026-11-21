@@ -2,7 +2,7 @@ package Mogura::Scanner::Spool;
 use Mojo::Base -base;
 use Mojo::File qw(path);
 use IO::Handle;
-use Mojo::JSON       qw(decode_json encode_json);
+use Mojo::JSON qw(decode_json encode_json);
 use Mogura::Protocol qw(valid_id now artifact_name);
 has 'config';
 
@@ -17,8 +17,8 @@ sub write_record {
     my $tmp = "$path.tmp";
     open my $fh, '>:raw', $tmp or die "Open $tmp: $!";
     print {$fh} encode_json($value) or die "Write $tmp: $!";
-    $fh->flush && $fh->sync         or die "Sync $tmp: $!";
-    close $fh                       or die "Close $tmp: $!";
+    $fh->flush && $fh->sync or die "Sync $tmp: $!";
+    close $fh or die "Close $tmp: $!";
     rename $tmp, $path or die "Publish $path: $!";
     path($path)->dirname->open('<')->sync or die "Sync record directory: $!";
 }

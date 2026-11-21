@@ -1,11 +1,11 @@
 package Mogura::Scanner;
 use Mojo::Base -base;
-use Cwd              qw(abs_path);
-use Fcntl            qw(:flock F_SETFD);
-use POSIX            qw(WNOHANG);
-use Time::HiRes      qw(time sleep);
-use Mojo::File       qw(path);
-use Mojo::JSON       qw(decode_json);
+use Cwd qw(abs_path);
+use Fcntl qw(:flock F_SETFD);
+use POSIX qw(WNOHANG);
+use Time::HiRes qw(time sleep);
+use Mojo::File qw(path);
+use Mojo::JSON qw(decode_json);
 use Mogura::Protocol qw(random_id valid_id now);
 use Mogura::Scanner::Config;
 use Mogura::Scanner::Spool;
@@ -15,9 +15,9 @@ use Mogura::Scanner::Client;
 
 has config => sub { Mogura::Scanner::Config->new };
 has 'client';
-has disk  => sub { Mogura::Scanner::Disk->new(config => shift->config, app_root => abs_path($0)) };
+has disk => sub { Mogura::Scanner::Disk->new(config => shift->config, app_root => abs_path($0)) };
 has spool => sub { Mogura::Scanner::Spool->new(config => shift->config) };
-has scan  => sub {
+has scan => sub {
     my $self = shift;
     Mogura::Scanner::Scan->new(config => $self->config, store => $self->spool, disk => $self->disk);
 };
@@ -76,7 +76,7 @@ sub acquire_lock {
     my ($self) = @_;
     open my $fh, '>>', path($self->config->state, 'scanner.lock') or die "Scanner lock: $!";
     flock($fh, LOCK_EX | LOCK_NB) or die 'Scanner or surviving descendant already running';
-    fcntl($fh, F_SETFD, 0)        or die "Inherit scanner lock: $!";
+    fcntl($fh, F_SETFD, 0) or die "Inherit scanner lock: $!";
     $self->{lock} = $fh;
 }
 
@@ -84,7 +84,7 @@ sub managed_mounts {
     my ($self) = @_;
     my $root = $self->config->mounts;
     return [
-        map  { $_->{target} }
+        map { $_->{target} }
         grep { $_->{target} eq $root || index($_->{target}, "$root/") == 0 }
             @{$self->disk->mount_table}
     ];
@@ -98,14 +98,14 @@ sub _records {
 
 sub _recover {
     my ($self, $intent, $mounts) = @_;
-    my $id        = $intent->{id};
-    my $scan      = $self->spool->get($id) // $self->scan->queued($intent);
-    my $root      = $self->config->mounts . "/$id";
+    my $id = $intent->{id};
+    my $scan = $self->spool->get($id) // $self->scan->queued($intent);
+    my $root = $self->config->mounts . "/$id";
     my $remaining = grep { $_ eq $root || index($_, "$root/") == 0 } @$mounts;
 
     # Exec descendants inherit the scan lock even when their supervisor dies.
     my $prior_cleanup = $scan->{cleanup_status};
-    my $lock          = eval { $self->scan->_acquire_lock("scan-$id") };
+    my $lock = eval { $self->scan->_acquire_lock("scan-$id") };
     if (!$lock || $remaining) {
         $scan->{cleanup_status} = 'needs_cleanup';
     }
@@ -119,9 +119,9 @@ sub _recover {
     $scan->{status} = 'partial'
         if $scan->{status} eq 'completed' && $scan->{cleanup_status} eq 'needs_cleanup';
     unless ($scan->{phase} eq 'finished') {
-        $scan->{status}      = 'interrupted';
-        $scan->{phase}       = 'finished';
-        $scan->{error}       = 'Scan process stopped before completion';
+        $scan->{status} = 'interrupted';
+        $scan->{phase} = 'finished';
+        $scan->{error} = 'Scan process stopped before completion';
         $scan->{finished_at} = now();
     }
     return $self->scan->save_finished($scan);
@@ -129,9 +129,9 @@ sub _recover {
 
 sub _transfer {
     my ($self, $dir, $intent, $scan) = @_;
-    my $route  = "/jobs/$intent->{id}/$intent->{run}";
+    my $route = "/jobs/$intent->{id}/$intent->{run}";
     my $record = $dir->child('delivery.json');
-    my $sent   = -e $record ? decode_json($record->slurp) : {};
+    my $sent = -e $record ? decode_json($record->slurp) : {};
     $self->client->request('POST', "$route/progress", $scan);
     for my $kind (qw(syft cdx grype log)) {
         my $file = $self->spool->artifact($intent->{id}, $kind) or next;
@@ -165,17 +165,17 @@ sub _retire_unstarted {
             'POST',
             "/jobs/$id/$intent->{run}/complete",
             {
-                status         => 'cancelled',
-                phase          => 'finished',
-                finished_at    => now(),
+                status => 'cancelled',
+                phase => 'finished',
+                finished_at => now(),
                 cleanup_status => 'not_needed',
-                sequence       => 1
+                sequence => 1
             }
         );
     }
     my $dir = $self->spool->directory($id);
     unlink $dir->child('intent.json') or die "Discard unstarted claim: $!";
-    rmdir $dir                        or die "Remove empty claim directory: $!";
+    rmdir $dir or die "Remove empty claim directory: $!";
 }
 
 sub _fork_job {
@@ -193,13 +193,13 @@ sub _fork_job {
 
 sub _capacity {
     my ($self) = @_;
-    my $root   = path($self->config->state, 'spool');
-    my $used   = 0;
+    my $root = path($self->config->state, 'spool');
+    my $used = 0;
     $used += (-s $_ // 0) for $root->list_tree->each;
     my $available =
         $self->scan->command->run(['/usr/bin/df', '-B1', '--output=avail', '--', "$root"]);
     return 0 unless $available =~ /\n\s*(\d+)\s*\z/;
-    my $free     = $1 - 16 * 1024**2;
+    my $free = $1 - 16 * 1024**2;
     my $reserved = 0;
     $reserved += ($_->{limit} // 0) * 5 for values %{$self->active};
     my $budget = $self->config->spool_limit - $used - $reserved;
@@ -268,7 +268,7 @@ sub _reconcile_spool {
     my %pending;
     my $sending = grep { !$_->{slot} } values %$active;
     for my $dir ($self->_records) {
-        my $id   = $dir->basename;
+        my $id = $dir->basename;
         my $file = $dir->child('intent.json');
         next unless -e $file;
         my $intent = decode_json($file->slurp);
@@ -283,7 +283,7 @@ sub _reconcile_spool {
         if (my $child = $active->{$id}) {
             my $scan = $self->spool->get($id);
             push @blocked, $id if $scan && $scan->{cleanup_status} eq 'needs_cleanup';
-            if (   $child->{slot}
+            if ($child->{slot}
                 && $scan
                 && $scan->{phase} ne 'finished'
                 && ($child->{reported} // 0) < $scan->{sequence})
@@ -313,8 +313,8 @@ sub _reconcile_spool {
 
 sub _send_inventory {
     my ($self, $pending, $blocked) = @_;
-    my $inventory = eval { $self->disk->inventory }
-        // {disks => [], errors => ["Disk discovery failed: $@"]};
+    my $inventory =
+        eval { $self->disk->inventory } // {disks => [], errors => ["Disk discovery failed: $@"]};
     $inventory->{blocked} = $blocked;
     my $reply = $self->client->request('POST', '/inventory', $inventory);
     for my $request (@{$reply->{cancel} // []}) {
@@ -347,7 +347,7 @@ sub _claim_and_start {
         my $job = $self->client->request('GET', '/jobs')->{job} or return;
         $intent = {
             %{$self->scan->validate_request($job)},
-            run     => random_id(),
+            run => random_id(),
             runtime => $self->config->runtime,
             started => 0
         };
@@ -356,7 +356,7 @@ sub _claim_and_start {
         $dir->dirname->open('<')->sync or die "Sync spool directory: $!";
         $self->spool->write_record($dir->child('intent.json'), $intent);
     }
-    my $id    = $intent->{id};
+    my $id = $intent->{id};
     my $claim = $self->client->request('POST', "/jobs/$id/$intent->{run}/claim", {});
     return $self->_retire_unstarted($intent, $claim->{cancel})
         if $claim->{expired} || $claim->{cancel};
@@ -373,7 +373,7 @@ sub _claim_and_start {
         $slot
     );
     $active->{$id}{limit} = $limit;
-    $active->{$id}{run}   = $intent->{run};
+    $active->{$id}{run} = $intent->{run};
 }
 
 sub run {

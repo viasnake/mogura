@@ -4,7 +4,7 @@ sub save_inventory {
     my ($store, $snapshot) = @_;
     $store->db->do(
         'UPDATE scanners SET seen=?,inventory=? WHERE id=?',
-        undef,              $snapshot->{updated_at} // time,
+        undef, $snapshot->{updated_at} // time,
         to_json($snapshot), 'fixture'
     );
 }

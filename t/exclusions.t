@@ -8,7 +8,7 @@ use lib 'lib';
 use Mogura::Scanner::Scan;
 use Mogura::Scanner::Command;
 
-my $scanner  = Mogura::Scanner::Scan->new;
+my $scanner = Mogura::Scanner::Scan->new;
 my @excluded = qw(var/log var/crash var/lib/systemd/coredump);
 my @retained = qw(
     var/lib/dpkg var/lib/rpm usr/lib/sysimage/rpm usr/share/rpm
@@ -72,9 +72,9 @@ for my $mount ('/usr', '/var', '/var/lib/rpm', '/var/log/../lib', '/var/log-old'
     $guest->child('etc/redhat-release')->spurt("not a distribution release\n");
     ok(eval { $scanner->inspect_root($guest); 1 },
         'Unidentifiable release metadata does not reject a root');
-    unlink $guest->child('etc/os-release')     or die $!;
+    unlink $guest->child('etc/os-release') or die $!;
     unlink $guest->child('etc/redhat-release') or die $!;
-    unlink $guest->child('etc/fstab')          or die $!;
+    unlink $guest->child('etc/fstab') or die $!;
     like(
         join(' ', @{$scanner->inspect_root($guest)}),
         qr/Cannot inspect \/etc\/fstab/,
@@ -131,14 +131,14 @@ subtest 'Real Syft excludes logs while retaining software evidence' => sub {
     plan skip_all => 'Set MOGURA_TEST_SYFT to an absolute Syft executable' unless $syft;
     die 'MOGURA_TEST_SYFT must be an absolute executable' unless $syft =~ m{\A/} && -x $syft;
     my $command = Mogura::Scanner::Command->new;
-    my $work    = path(tempdir(CLEANUP => 1));
+    my $work = path(tempdir(CLEANUP => 1));
     $work->child('tools.yaml')->spurt("{}\n");
     my $guest = make_root();
     my %expected;
     my $index = 0;
 
     for my $relative (@retained, @excluded) {
-        my $name      = 'mogura-fixture-' . ++$index;
+        my $name = 'mogura-fixture-' . ++$index;
         my $directory = $guest->child($relative, $name . '-1.0.0.dist-info')->make_path;
         $directory->child('METADATA')
             ->spurt("Metadata-Version: 2.1\nName: $name\nVersion: 1.0.0\n");
@@ -155,13 +155,13 @@ subtest 'Real Syft excludes logs while retaining software evidence' => sub {
     $command->run(
         [
             $syft, 'scan', "dir:$guest", '--config', '' . $work->child('tools.yaml'),
-            '-o',  "syft-json=$output", map { ('--exclude', $_) } @{$scanner->exclusions($guest)}
+            '-o', "syft-json=$output", map { ('--exclude', $_) } @{$scanner->exclusions($guest)}
         ],
-        cwd     => "$work",
+        cwd => "$work",
         timeout => 120,
-        env     => {SYFT_CHECK_FOR_APP_UPDATE => 'false'}
+        env => {SYFT_CHECK_FOR_APP_UPDATE => 'false'}
     );
-    my $sbom  = decode_json($output->slurp);
+    my $sbom = decode_json($output->slurp);
     my %found = map { $_->{name} => 1 } @{$sbom->{artifacts}};
     is_deeply(
         [sort keys %found],

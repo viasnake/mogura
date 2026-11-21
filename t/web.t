@@ -13,7 +13,7 @@ use Mogura::Scanner::Disk;
 require './t/lib/server-fixture.pl';
 
 # Seed the server database with small, public scan artifacts.
-my $root  = tempdir(CLEANUP => 1);
+my $root = tempdir(CLEANUP => 1);
 my $store = Mogura::Server::Store->new(state => $root)->initialize;
 $store->register('fixture', 'a' x 64);
 my $token = 'f' x 64;
@@ -21,37 +21,37 @@ save_inventory(
     $store,
     {
         updated_at => time,
-        errors     => [],
-        disks      => [
+        errors => [],
+        disks => [
             {
-                name    => '/dev/example',
-                size    => 1000000000,
-                serial  => 'fixture',
+                name => '/dev/example',
+                size => 1000000000,
+                serial => 'fixture',
                 targets => [
                     {
-                        name       => '/dev/example1',
-                        size       => 900000000,
-                        fstype     => 'ext4',
+                        name => '/dev/example1',
+                        size => 900000000,
+                        fstype => 'ext4',
                         selectable => 1,
-                        reasons    => [],
-                        token      => $token
+                        reasons => [],
+                        token => $token
                     }
                 ]
             }
         ]
     }
 );
-my $id      = 'a' x 32;
+my $id = 'a' x 32;
 my $payload = '<script>alert("external")</script>';
-my $scan    = {
-    id             => $id,
-    tags           => [$payload],
-    note           => $payload,
-    created_at     => '2026-01-01T00:00:00Z',
-    status         => 'completed',
-    phase          => 'finished',
+my $scan = {
+    id => $id,
+    tags => [$payload],
+    note => $payload,
+    created_at => '2026-01-01T00:00:00Z',
+    status => 'completed',
+    phase => 'finished',
     cleanup_status => 'unmounted',
-    warnings       => [$payload]
+    warnings => [$payload]
 };
 seed_scan($store, $scan);
 my $dir = $store->directory($id);
@@ -61,10 +61,10 @@ seed_artifact(
         {
             artifacts => [
                 {
-                    name      => $payload,
-                    version   => '1.0',
-                    type      => 'deb',
-                    foundBy   => 'fixture',
+                    name => $payload,
+                    version => '1.0',
+                    type => 'deb',
+                    foundBy => 'fixture',
                     locations => [{path => '/var/lib/dpkg/status'}]
                 }
             ]
@@ -77,11 +77,11 @@ seed_artifact(
         {
             matches => [
                 {
-                    artifact      => {name => $payload},
+                    artifact => {name => $payload},
                     vulnerability => {
-                        id       => 'CVE-EXAMPLE-001',
+                        id => 'CVE-EXAMPLE-001',
                         severity => 'High',
-                        fix      => {versions => ['1.1'], state => 'fixed'}
+                        fix => {versions => ['1.1'], state => 'fixed'}
                     }
                 }
             ]
@@ -106,7 +106,7 @@ $t->get_ok("/scans/$id/download/secret")->status_is(404);
 $t->get_ok('/scans/invalid/download/metadata')->status_is(404);
 $t->get_ok("/scans/$id/download/..%2F..%2Fweb.secret")->status_is(404);
 
-my $results     = Mogura::Server::Results->new(state => $root);
+my $results = Mogura::Server::Results->new(state => $root);
 my $result_file = $results->location($id, 'grype');
 $t->get_ok("/scans/$id/results/grype")->status_is(409);
 ok(!-e $result_file, 'Reading an old result never creates its index');
@@ -130,7 +130,7 @@ $t->get_ok($status_url)->status_is(200)->json_is('/state', 'ready');
 my $result_url = $t->tx->res->json->{url};
 $t->get_ok($result_url)
     ->status_is(200)
-    ->json_is('/total',    1)
+    ->json_is('/total', 1)
     ->json_is('/rows/0/0', 'CVE-EXAMPLE-001')
     ->json_is('/rows/0/1', $payload);
 $t->get_ok("$result_url&query=missing")->status_is(200)->json_is('/count', 0);
@@ -203,7 +203,7 @@ for my $host ('localhost:8080', '127.0.0.1:8080', '192.0.2.10:8080', 'scanner.ex
     $t->post_ok(
         '/scans' => {Host => $host} => form => {
             scan_id => 'b' x 32,
-            target  => "fixture:$token",
+            target => "fixture:$token",
         }
     )->status_is(403);
 }
@@ -211,15 +211,15 @@ $t->post_ok('/scans' => form => {scan_id => 'b' x 32, target => "fixture:$token"
 is(job_count(), 0, 'Rejected requests cannot enqueue privileged scan work');
 
 $t->get_ok('/')->status_is(200);
-my $csrf   = $t->tx->res->dom->at('input[name="csrf_token"]')->attr('value');
+my $csrf = $t->tx->res->dom->at('input[name="csrf_token"]')->attr('value');
 my $new_id = $t->tx->res->dom->at('input[name="scan_id"]')->attr('value');
-my %form   = (
+my %form = (
     csrf_token => $csrf,
-    scan_id    => $new_id,
-    target     => "fixture:$token",
-    tags       => ['clone-test', '日本語', 'team,blue'],
-    new_tag    => 'pending-tag',
-    note       => '',
+    scan_id => $new_id,
+    target => "fixture:$token",
+    tags => ['clone-test', '日本語', 'team,blue'],
+    new_tag => 'pending-tag',
+    note => '',
 );
 $t->post_ok('/scans' => form => \%form)->status_is(303);
 is_deeply(
@@ -232,22 +232,22 @@ is(job_count(), 1, 'A clone scan needs no confirmation flag and cannot be schedu
 
 # Rejected edits must leave all existing annotations and original artifacts intact.
 $t->post_ok("/scans/$id/tags" => form => {operation => 'add', tag => 'denied'})->status_is(403);
-$t->post_ok("/scans/$id/note" => form => {note      => 'denied'})->status_is(403);
+$t->post_ok("/scans/$id/note" => form => {note => 'denied'})->status_is(403);
 is_deeply($store->get($id)->{tags}, [$payload], 'Missing CSRF cannot change tags');
 is($store->get($id)->{note}, $payload, 'Missing CSRF cannot change a note');
 
 $t->post_ok(
     "/scans/$id/tags" => {Accept => 'application/json'} => form => {
         csrf_token => $csrf,
-        operation  => 'add',
-        tag        => 'production'
+        operation => 'add',
+        tag => 'production'
     }
 )->status_is(200)->json_is('/tags', [$payload, 'production']);
 $t->post_ok(
     "/scans/$id/tags" => form => {
         csrf_token => $csrf,
-        operation  => 'add',
-        tag        => 'x' x 121
+        operation => 'add',
+        tag => 'x' x 121
     }
 )->status_is(400);
 is_deeply(
@@ -269,8 +269,8 @@ $t->get_ok('/history?tag=prod')->status_is(200)->content_unlike(qr/\Q$id\E/);
 $t->post_ok(
     "/scans/$id/tags" => form => {
         csrf_token => $csrf,
-        operation  => 'remove',
-        tag        => 'production'
+        operation => 'remove',
+        tag => 'production'
     }
 )->status_is(303);
 is_deeply($store->get($id)->{tags}, [$payload], 'Removing one tag preserves every other tag');
@@ -279,7 +279,7 @@ my $note = "日本語のメモ\n$payload";
 $t->post_ok(
     "/scans/$id/note" => {Accept => 'application/json'} => form => {
         csrf_token => $csrf,
-        note       => $note
+        note => $note
     }
 )->status_is(200)->json_is('/note', $note);
 $t->get_ok("/scans/$id")->status_is(200)->content_unlike(qr/<script>alert/);
@@ -293,7 +293,7 @@ $t->post_ok('/scans/' . ('f' x 32) . '/note' => form => {csrf_token => $csrf, no
     ->status_is(404);
 $t->post_ok("/scans/$id/note" => form => {csrf_token => $csrf, note => ''})->status_is(303);
 is($store->get($id)->{note}, '', 'Clearing a note persists rather than restoring its old value');
-is(job_count(),              1,  'Annotation edits never enqueue or replay disk work');
+is(job_count(), 1, 'Annotation edits never enqueue or replay disk work');
 
 # Target authorization comes from current inventory, never a claimed kind or
 # an old browser form. Verify rejection by the unchanged queue as well as HTTP.
@@ -304,39 +304,39 @@ $inventory->{host} = {kind => 'host', selectable => 1, token => $host_token};
 save_inventory($store, $inventory);
 my %host_form = (
     csrf_token => $csrf,
-    scan_id    => Mogura::Server::random_id(),
-    target     => "fixture:$host_token"
+    scan_id => Mogura::Server::random_id(),
+    target => "fixture:$host_token"
 );
 $t->post_ok('/scans' => form => \%host_form)->status_is(303);
 is(job_count(), 2, 'Live-host scanning uses the same submission contract as clone scanning');
 $host_form{scan_id} = Mogura::Server::random_id();
-$host_form{target}  = "fixture:$token";
-$host_form{kind}    = 'host';
+$host_form{target} = "fixture:$token";
+$host_form{kind} = 'host';
 $t->post_ok('/scans' => form => \%host_form)->status_is(409);
 $host_form{target} = "fixture:$host_token";
 $inventory->{updated_at} = time - 60;
 save_inventory($store, $inventory);
 $t->post_ok('/scans' => form => \%host_form)->status_is(409);
 $inventory->{updated_at} = time;
-$inventory->{blocked}    = ['/run/mogura/mounts/fixture'];
+$inventory->{blocked} = ['/run/mogura/mounts/fixture'];
 save_inventory($store, $inventory);
 $t->post_ok('/scans' => form => \%host_form)->status_is(409);
 is(job_count(), 2, 'Forged targets, stale inventory, and residual mounts cannot create scan jobs');
 
 # Polling renders current disk controls even while earlier scans are active.
 $inventory->{updated_at} = time;
-$inventory->{blocked}    = [];
+$inventory->{blocked} = [];
 my $new_token = 'd' x 64;
-my $new_disk  = {
-    name    => '/dev/hotplug',
+my $new_disk = {
+    name => '/dev/hotplug',
     targets => [
         {
-            name       => '/dev/hotplug1',
-            token      => $new_token,
-            fstype     => 'ext4',
+            name => '/dev/hotplug1',
+            token => $new_token,
+            fstype => 'ext4',
             selectable => 1,
-            reasons    => [],
-            size       => 1000,
+            reasons => [],
+            size => 1000,
         }
     ],
 };
@@ -347,11 +347,11 @@ $t->get_ok('/inventory')
     ->header_is('Cache-Control', 'no-store')
     ->element_exists('input[value="fixture:' . $new_token . '"]')
     ->element_exists_not('textarea[name="note"]');
-my $async_id   = Mogura::Server::random_id();
+my $async_id = Mogura::Server::random_id();
 my %async_form = (csrf_token => $csrf, scan_id => $async_id, target => "fixture:$new_token");
 $t->post_ok('/scans' => {Accept => 'application/json'} => form => \%async_form)
     ->status_is(202)
-    ->json_is('/id',  $async_id)
+    ->json_is('/id', $async_id)
     ->json_is('/url', "/scans/$async_id");
 like($t->tx->res->json->{next_id}, qr/\A[0-9a-f]{32}\z/,
     'Response supplies the next submission ID');
@@ -372,32 +372,32 @@ $t->get_ok('/inventory')
 # unsupported layout details or offer BIOS boot partitions for scanning.
 my %layout_nodes = (
     '8:16' => {
-        name      => '/dev/clone',
-        type      => 'disk',
+        name => '/dev/clone',
+        type => 'disk',
         'maj:min' => '8:16',
-        pttype    => 'gpt',
-        serial    => 'clone',
-        diskseq   => 1,
+        pttype => 'gpt',
+        serial => 'clone',
+        diskseq => 1,
     },
     '8:17' => {
-        name      => '/dev/clone1',
-        type      => 'part',
+        name => '/dev/clone1',
+        type => 'part',
         'maj:min' => '8:17',
-        fstype    => 'ext4',
-        start     => 2048,
+        fstype => 'ext4',
+        start => 2048,
     },
     '8:18' => {
-        name      => '/dev/clone2',
-        type      => 'part',
+        name => '/dev/clone2',
+        type => 'part',
         'maj:min' => '8:18',
-        parttype  => '21686148-6449-6e6f-744e-656564454649',
-        fstype    => '',
-        start     => 34,
+        parttype => '21686148-6449-6e6f-744e-656564454649',
+        fstype => '',
+        start => 34,
     },
 );
 my %layout_parents = ('8:17' => {'8:16' => 1}, '8:18' => {'8:16' => 1});
-my $classifier     = Mogura::Scanner::Disk->new;
-my $layout         = $classifier->classify(\%layout_nodes, \%layout_parents, {}, [], 'boot-test');
+my $classifier = Mogura::Scanner::Disk->new;
+my $layout = $classifier->classify(\%layout_nodes, \%layout_parents, {}, [], 'boot-test');
 save_inventory($store, $layout);
 my ($bios_target, $root_target) = @{$layout->{disks}[0]{targets}};
 for my $route ('/', '/inventory') {
@@ -411,20 +411,20 @@ for my $route ('/', '/inventory') {
 }
 my %bios_form = (
     csrf_token => $csrf,
-    scan_id    => Mogura::Server::random_id(),
-    target     => "fixture:$bios_target->{token}",
+    scan_id => Mogura::Server::random_id(),
+    target => "fixture:$bios_target->{token}",
 );
 $t->post_ok('/scans' => form => \%bios_form)->status_is(409);
 is(job_count(), 3, 'A forged BIOS boot selection cannot enqueue a scan');
 
 $layout_nodes{'8:18'}{parttype} = '';
 $layout_nodes{'8:19'} = {
-    name      => '/dev/clone3' . $payload,
-    type      => 'part',
+    name => '/dev/clone3' . $payload,
+    type => 'part',
     'maj:min' => '8:19',
-    parttype  => 'unknown',
-    fstype    => 'LVM2_member',
-    start     => 4096,
+    parttype => 'unknown',
+    fstype => 'LVM2_member',
+    start => 4096,
 };
 $layout_parents{'8:19'} = {'8:16' => 1};
 $layout = $classifier->classify(\%layout_nodes, \%layout_parents, {}, [], 'boot-test');

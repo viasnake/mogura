@@ -6,7 +6,7 @@ use Mojo::File qw(path);
 use Mojo::JSON qw(decode_json);
 use Mojo::Server::Daemon;
 use IO::Socket::INET;
-use POSIX       qw(_exit);
+use POSIX qw(_exit);
 use Time::HiRes qw(sleep time);
 use lib 'lib';
 use Mogura::Scanner;
@@ -23,12 +23,12 @@ use Mogura::Protocol qw(random_id);
         return {
             disks => [
                 {
-                    name    => '/dev/sdb',
+                    name => '/dev/sdb',
                     targets => [
                         {
                             selectable => 1,
-                            token      => 'c' x 64,
-                            identity   =>
+                            token => 'c' x 64,
+                            identity =>
                                 {disk => {name => '/dev/sdb'}, partition => {name => '/dev/sdb1'}}
                         }
                     ]
@@ -42,7 +42,7 @@ use Mogura::Protocol qw(random_id);
 
     sub run {
         return "Avail\n9999999999\n" if $_[1][0] eq '/usr/bin/df';
-        return ''                    if $_[1][0] eq '/usr/bin/prlimit';
+        return '' if $_[1][0] eq '/usr/bin/prlimit';
         die 'Unexpected external command';
     }
 
@@ -59,8 +59,8 @@ use Mogura::Protocol qw(random_id);
         close $count;
         Time::HiRes::sleep(0.02) while -f $root->child('pause');
         for my $pair (
-            ['syft',  '{"source":{},"artifacts":[],"descriptor":{"name":"syft"}}'],
-            ['cdx',   '{"bomFormat":"CycloneDX","specVersion":"1.6"}'],
+            ['syft', '{"source":{},"artifacts":[],"descriptor":{"name":"syft"}}'],
+            ['cdx', '{"bomFormat":"CycloneDX","specVersion":"1.6"}'],
             ['grype', '{"matches":[],"descriptor":{"name":"grype"}}']
             )
         {
@@ -68,8 +68,8 @@ use Mogura::Protocol qw(random_id);
                 ->child(Mogura::Protocol::artifact_name($pair->[0]))
                 ->spurt($pair->[1]);
         }
-        $scan->{phase}          = 'finished';
-        $scan->{status}         = 'completed';
+        $scan->{phase} = 'finished';
+        $scan->{status} = 'completed';
         $scan->{cleanup_status} = 'unmounted';
         $self->store->save($scan);
     }
@@ -88,17 +88,17 @@ use Mogura::Protocol qw(random_id);
     }
 }
 
-my $root  = path(tempdir(CLEANUP => 1));
+my $root = path(tempdir(CLEANUP => 1));
 my $store = Mogura::Server::Store->new(state => "" . $root->child('server'))->initialize;
-my $app   = Mogura::Server->new(store => $store);
+my $app = Mogura::Server->new(store => $store);
 $app->log->level('fatal');
 my $daemon = Mojo::Server::Daemon->new(
-    app    => $app,
+    app => $app,
     listen => ['http://127.0.0.1:0', 'https://127.0.0.1:0'],
     silent => 1
 )->start;
-my $url    = 'http://127.0.0.1:' . $daemon->ports->[0];
-my $https  = 'https://localhost:' . $daemon->ports->[1];
+my $url = 'http://127.0.0.1:' . $daemon->ports->[0];
+my $https = 'https://localhost:' . $daemon->ports->[1];
 my $server = fork // die $!;
 unless ($server) { $daemon->run; _exit(0) }
 $daemon->stop;
@@ -123,20 +123,20 @@ for my $name (qw(east west)) {
         $client->ua->ca(
             path($INC{'Mojo/IOLoop/TLS.pm'})->sibling('resources', 'server.crt')->to_string);
     }
-    my $cfg   = Mogura::Scanner::Config->new(state => "$state", runtime => "$state/run", jobs => 1);
+    my $cfg = Mogura::Scanner::Config->new(state => "$state", runtime => "$state/run", jobs => 1);
     my $spool = Mogura::Scanner::Spool->new(config => $cfg);
-    my $node  = Mogura::Scanner->new(
+    my $node = Mogura::Scanner->new(
         config => $cfg,
         client => $client,
-        disk   => FixtureDisk->new,
-        spool  => $spool,
-        scan   => FixtureScan->new(config => $cfg, store => $spool)
+        disk => FixtureDisk->new,
+        spool => $spool,
+        scan => FixtureScan->new(config => $cfg, store => $spool)
     );
     $node->tick;
     $nodes{$name} = $node;
 }
 my ($east, $west) = @nodes{qw(east west)};
-my ($a,    $b)    = map { random_id() } 1 .. 2;
+my ($a, $b) = map { random_id() } 1 .. 2;
 is($store->submit($a, 'east', 'c' x 64, [], ''), 202, 'East job');
 is($store->submit($b, 'west', 'c' x 64, [], ''), 202, 'West job for same device name');
 $east->client->lose_claim(1);
@@ -151,7 +151,7 @@ ok($store->owns('east', $a, $intent->{run}) && !$intent->{started},
     my $socket = IO::Socket::INET->new(
         PeerAddr => '127.0.0.1',
         PeerPort => Mojo::URL->new($url)->port,
-        Proto    => 'tcp'
+        Proto => 'tcp'
     ) or die $!;
     my $bearer = $root->child('east/token')->slurp;
     print {$socket}
@@ -190,9 +190,9 @@ waitpid($west->active->{$b}{pid}, 0);
 $west = Mogura::Scanner->new(
     config => $west->config,
     client => $west->client,
-    disk   => $west->disk,
-    spool  => $west->spool,
-    scan   => $west->scan
+    disk => $west->disk,
+    spool => $west->spool,
+    scan => $west->scan
 );
 $east->tick;
 ok(
@@ -222,11 +222,11 @@ for my $pair (['east', $a], ['west', $b]) {
 }
 subtest 'Browser cancellation stops only its assigned run' => sub {
     my $web = Mojo::UserAgent->new;
-    my $id  = random_id();
+    my $id = random_id();
     is($store->submit($id, 'west', 'c' x 64, [], ''), 202, 'Submit scan');
     my $endpoint = "$url/scans/$id/cancel";
-    my $form     = $web->get("$url/scans/$id")->result->dom->at('form[action$="/cancel"]');
-    my $csrf     = $form->at('input[name="csrf_token"]')->attr('value');
+    my $form = $web->get("$url/scans/$id")->result->dom->at('form[action$="/cancel"]');
+    my $csrf = $form->at('input[name="csrf_token"]')->attr('value');
     is($web->post($endpoint)->result->code, 403, 'Missing CSRF token cannot stop work');
     is($web->post($endpoint => form => {csrf_token => $csrf})->result->code,
         303, 'Cancel from detail page');
@@ -257,8 +257,8 @@ subtest 'Browser cancellation stops only its assigned run' => sub {
     is($store->get($id)->{status}, 'cancelled', 'Retry confirms cancellation before starting');
     unlike($root->child('east/starts')->slurp, qr/\Q$id\E/, 'Cancelled claim never ran');
 };
-my $crashed   = {id => random_id(), token => 'c' x 64};
-my $mount     = $west->config->mounts . "/$crashed->{id}";
+my $crashed = {id => random_id(), token => 'c' x 64};
+my $mount = $west->config->mounts . "/$crashed->{id}";
 my $recovered = $west->_recover($crashed, [$mount]);
 is($recovered->{cleanup_status}, 'needs_cleanup', 'Residual mount blocks detach after restart');
 {

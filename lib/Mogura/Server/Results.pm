@@ -4,7 +4,7 @@ use utf8;
 use feature 'fc';
 use DBI;
 use Digest::SHA;
-use Fcntl      qw(:flock);
+use Fcntl qw(:flock);
 use Mojo::File qw(path);
 use Mojo::JSON qw(encode_json decode_json);
 use Mogura::ResultStream;
@@ -32,10 +32,10 @@ sub connect {
         "dbi:SQLite:dbname=$file",
         '', '',
         {
-            RaiseError        => 1,
-            PrintError        => 0,
-            AutoCommit        => 1,
-            sqlite_unicode    => 1,
+            RaiseError => 1,
+            PrintError => 0,
+            AutoCommit => 1,
+            sqlite_unicode => 1,
             sqlite_open_flags => $readonly ? 1 : 6,
         }
     );
@@ -87,7 +87,7 @@ sub row {
         ];
     }
     my $vulnerability = $value->{vulnerability} // {};
-    my $artifact      = $value->{artifact}      // {};
+    my $artifact = $value->{artifact} // {};
     return [
         map { text($_) } (
             $vulnerability->{id}, $artifact->{name},
@@ -143,7 +143,7 @@ sub build {
     return 0 unless $lock;
     return 1 if !$options{force} && $self->ready($file, $revision);
     my $temporary = path("$file.part");
-    unlink $temporary           if -f $temporary;
+    unlink $temporary if -f $temporary;
     unlink "$temporary-journal" if -f "$temporary-journal";
     my $db;
     my $ok = eval {
@@ -161,10 +161,10 @@ sub build {
                 . ')'
         );
         $db->begin_work;
-        my $insert        = $db->prepare('INSERT INTO rows VALUES (' . join(',', ('?') x 16) . ')');
-        my $total         = 0;
+        my $insert = $db->prepare('INSERT INTO rows VALUES (' . join(',', ('?') x 16) . ')');
+        my $total = 0;
         my $source_digest = Digest::SHA->new(256);
-        my $rows_digest   = Digest::SHA->new(256);
+        my $rows_digest = Digest::SHA->new(256);
         my %severity =
             (Critical => 0, High => 1, Medium => 2, Low => 3, Negligible => 4, Unknown => 5);
         my $envelope = Mogura::ResultStream->read(
@@ -174,7 +174,7 @@ sub build {
                 my @columns;
                 for my $column (0 .. 4) {
                     my $value = $row->[$column];
-                    my $sort  = $kind eq 'grype'
+                    my $sort = $kind eq 'grype'
                         && $column == 3 ? ($severity{$value} // 6) : sort_key($value);
                     push @columns, $value, fc($value), "$sort";
                 }
@@ -223,25 +223,25 @@ sub verify {
     my $rows = $db->prepare('SELECT * FROM rows ORDER BY id');
     $rows->execute;
     my $digest = Digest::SHA->new(256);
-    my $count  = 0;
+    my $count = 0;
     while (my $row = $rows->fetchrow_arrayref) {
         $digest->add(encode_json([0 + $row->[0], map { "$_" } @$row[1 .. $#$row]]) . "\n");
         $count++;
     }
-    die 'Result row count mismatch'   unless $count == $expected_total;
+    die 'Result row count mismatch' unless $count == $expected_total;
     die 'Result row content mismatch' unless $digest->hexdigest eq $expected_hash;
     return 1;
 }
 
 sub page {
     my ($self, $file, $revision, $request) = @_;
-    my $db       = $self->connect($file, 1);
+    my $db = $self->connect($file, 1);
     my $metadata = $db->selectrow_hashref('SELECT * FROM metadata');
     die 'Result version changed' unless $metadata->{revision} eq $revision;
     my $query = fc($request->{query} // '');
     $query =~ s/\A\s+|\s+\z//g;
     my $where = length($query) ? ' WHERE ' . join(' OR ', map { "instr(f$_, ?) > 0" } 0 .. 4) : '';
-    my @bind  = length($query) ? (($query) x 5)                                               : ();
+    my @bind = length($query) ? (($query) x 5) : ();
     my $total = 0 + $metadata->{total};
     my $count =
         length($query)
@@ -265,10 +265,10 @@ sub page {
         && $request->{version} ne $metadata->{generation};
     return {
         revision => $request->{version} // $revision,
-        total    => $total,
-        count    => 0 + $count,
-        start    => $start,
-        rows     => $rows
+        total => $total,
+        count => 0 + $count,
+        start => $start,
+        rows => $rows
     };
 }
 

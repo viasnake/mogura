@@ -1,20 +1,20 @@
 package Mogura::Scanner::Disk;
 use Mojo::Base -base;
-use Mojo::JSON  qw(decode_json);
-use Mojo::File  qw(path);
+use Mojo::JSON qw(decode_json);
+use Mojo::File qw(path);
 use Digest::SHA qw(sha256_hex);
-use JSON::PP    ();
-use Cwd         qw(abs_path);
-use Fcntl       qw(O_RDONLY O_NONBLOCK);
+use JSON::PP ();
+use Cwd qw(abs_path);
+use Fcntl qw(O_RDONLY O_NONBLOCK);
 use Mogura::Scanner::Command;
 
 # Linux amd64: _IOR(0x12, 128, __u64), available since Linux 5.15.
-use constant BLKGETDISKSEQ            => 0x80081280;
+use constant BLKGETDISKSEQ => 0x80081280;
 use constant BIOS_BOOT_PARTITION_TYPE => '21686148-6449-6e6f-744e-656564454649';
 
 has 'config';
-has command    => sub { Mogura::Scanner::Command->new };
-has app_root   => sub { abs_path(__FILE__) };
+has command => sub { Mogura::Scanner::Command->new };
+has app_root => sub { abs_path(__FILE__) };
 has sysfs_root => '/sys/dev/block';
 
 sub device_number {
@@ -23,8 +23,8 @@ sub device_number {
 
     # Linux dev_t stores the major/minor fields in separate bit ranges.
     my $device_id = (stat $file)[6];
-    my $major     = (($device_id >> 8) & 0xfff) | (($device_id >> 32) & 0xfffff000);
-    my $minor     = ($device_id & 0xff) | (($device_id >> 12) & 0xffffff00);
+    my $major = (($device_id >> 8) & 0xfff) | (($device_id >> 32) & 0xfffff000);
+    my $minor = ($device_id & 0xff) | (($device_id >> 12) & 0xffffff00);
     return "$major:$minor";
 }
 
@@ -38,7 +38,7 @@ sub mount_table {
         # filesystem fields without assuming a fixed number of columns.
         my ($mount_description, $filesystem_description) = split / - /, $line, 2;
         die 'Cannot parse mount table' unless defined $filesystem_description;
-        my @mount_fields      = split / /, $mount_description;
+        my @mount_fields = split / /, $mount_description;
         my @filesystem_fields = split / /, $filesystem_description;
 
         # The kernel octal-escapes whitespace and backslashes in these paths.
@@ -48,11 +48,11 @@ sub mount_table {
         }
         push @mounts,
             {
-            number  => $mount_fields[2],
-            root    => $root,
-            target  => $mountpoint,
-            source  => $source,
-            fstype  => $filesystem_fields[0],
+            number => $mount_fields[2],
+            root => $root,
+            target => $mountpoint,
+            source => $source,
+            fstype => $filesystem_fields[0],
             options => "$mount_fields[5],$filesystem_fields[2]",
             };
     }
@@ -75,7 +75,7 @@ sub inventory {
     $self->_protect_scanner_storage($nodes, \%busy, \@errors);
     $self->_exclude_active_swap($nodes, \%busy);
 
-    my $boot_id   = path('/proc/sys/kernel/random/boot_id')->slurp;
+    my $boot_id = path('/proc/sys/kernel/random/boot_id')->slurp;
     my $inventory = $self->classify($nodes, $parents, \%busy, \@errors, $boot_id);
     $inventory->{host} = $self->host_target;
 
@@ -96,16 +96,16 @@ sub host_target {
     my ($root) = grep { $_->{target} eq '/' } @{$self->mount_table};
     die 'Cannot identify the running root filesystem' unless $root;
     my $identity = {
-        kind      => 'host',
-        boot_id   => path('/proc/sys/kernel/random/boot_id')->slurp,
-        disk      => {name => $root->{source}},
+        kind => 'host',
+        boot_id => path('/proc/sys/kernel/random/boot_id')->slurp,
+        disk => {name => $root->{source}},
         partition => {name => '/', fstype => $root->{fstype}, 'maj:min' => $root->{number}},
     };
     return {
-        kind       => 'host',
+        kind => 'host',
         selectable => 1,
-        identity   => $identity,
-        token      => sha256_hex(JSON::PP->new->canonical->encode($identity)),
+        identity => $identity,
+        token => sha256_hex(JSON::PP->new->canonical->encode($identity)),
     };
 }
 
@@ -138,8 +138,8 @@ sub _read_block_devices {
     );
     my $json = $self->command->run(
         [
-            '/usr/bin/lsblk', '--json',   '--bytes', '--paths',
-            '--tree',         '--output', join(',', @columns),
+            '/usr/bin/lsblk', '--json', '--bytes', '--paths',
+            '--tree', '--output', join(',', @columns),
         ]
     );
     my $devices = decode_json($json)->{blockdevices};
@@ -193,7 +193,7 @@ sub _read_sysfs {
         }
 
         my $sequence_file = $device_directory->child('diskseq');
-        my $sequence      = -f $sequence_file ? $sequence_file->slurp : '';
+        my $sequence = -f $sequence_file ? $sequence_file->slurp : '';
         $sequence =~ s/\s+\z//;
         $nodes->{$number}{diskseq} = $sequence;
     }
@@ -208,11 +208,11 @@ sub _protect_scanner_storage {
         my $json = $self->command->run(
             [
                 '/usr/bin/findmnt', '--json',
-                '--target',         $protected_path,
-                '--output',         'MAJ:MIN,FSTYPE,SOURCE',
+                '--target', $protected_path,
+                '--output', 'MAJ:MIN,FSTYPE,SOURCE',
             ]
         );
-        my $mount  = decode_json($json)->{filesystems}[0];
+        my $mount = decode_json($json)->{filesystems}[0];
         my $number = $mount->{'maj:min'} // '';
         if ($nodes->{$number}) {
             $busy->{$number} = "Scanner storage: $protected_path";
@@ -227,7 +227,7 @@ sub _exclude_active_swap {
     my ($self, $nodes, $busy) = @_;
 
     my @swap_entries = split /\n/, path('/proc/swaps')->slurp;
-    shift @swap_entries;    # /proc/swaps begins with a column header.
+    shift @swap_entries; # /proc/swaps begins with a column header.
 
     for my $entry (@swap_entries) {
         my ($file) = split /\s+/, $entry;
@@ -262,7 +262,7 @@ sub classify {
         grep { $_->{type} eq 'disk' } values %$nodes;
     my @disks;
     for my $disk (@physical_disks) {
-        my $number     = $disk->{'maj:min'};
+        my $number = $disk->{'maj:min'};
         my @partitions = sort { ($a->{start} // 0) <=> ($b->{start} // 0) }
             grep { ($parents->{$_->{'maj:min'}} // {})->{$number} } values %$nodes;
         my $reasons = $self->_disk_exclusion_reasons($disk, \@partitions, \%excluded, $errors);
@@ -295,10 +295,10 @@ sub _disk_exclusion_reasons {
     my ($self, $disk, $partitions, $excluded, $errors) = @_;
 
     my @reasons = @$errors;
-    my $number  = $disk->{'maj:min'};
+    my $number = $disk->{'maj:min'};
     push @reasons, $excluded->{$number} if $excluded->{$number};
 
-    my $hardware_id  = ($disk->{serial}  // '') || ($disk->{wwn} // '');
+    my $hardware_id = ($disk->{serial} // '') || ($disk->{wwn} // '');
     my $has_sequence = ($disk->{diskseq} // '') =~ /\A\d+\z/;
     unless (length($hardware_id) && $has_sequence) {
         push @reasons, 'No hardware serial / WWN or kernel disk sequence';
@@ -320,7 +320,7 @@ sub _disk_exclusion_reasons {
             lc($partition->{parttype} // '') =~ /\A(?:c12a7328-f81f-11d2-ba4b-00a0c93ec93b|0xef)\z/;
         my $is_bios_boot_type = lc($partition->{parttype} // '') eq BIOS_BOOT_PARTITION_TYPE;
         my $supported =
-              $is_bios_boot_type
+            $is_bios_boot_type
             ? $self->_is_bios_boot_partition($disk, $partition)
             : $filesystem =~ /\A(?:ext4|xfs|swap)\z/ || ($is_efi && $filesystem eq 'vfat');
         unless ($partition->{type} eq 'part' && $supported) {
@@ -342,7 +342,7 @@ sub _is_bios_boot_partition {
     # GRUB stores bootloader data here without a filesystem. Only this exact
     # GPT layout may coexist with scan targets; host-use checks still apply.
     return
-           ($disk->{pttype} // '') eq 'gpt'
+        ($disk->{pttype} // '') eq 'gpt'
         && ($partition->{type} // '') eq 'part'
         && lc($partition->{parttype} // '') eq BIOS_BOOT_PARTITION_TYPE
         && !length($partition->{fstype} // '');
@@ -362,17 +362,17 @@ sub _build_target {
     # Serial/WWN identify the hardware; boot ID and disk sequence distinguish
     # attachments even when /dev names, partition UUIDs, and sizes are reused.
     my $identity = {
-        boot_id   => $boot_id,
-        disk      => {map { $_ => $disk->{$_} } qw(name maj:min size serial wwn diskseq pttype)},
+        boot_id => $boot_id,
+        disk => {map { $_ => $disk->{$_} } qw(name maj:min size serial wwn diskseq pttype)},
         partition =>
             {map { $_ => $filesystem->{$_} } qw(name maj:min size start fstype uuid partuuid)},
     };
     my $canonical_identity = JSON::PP->new->canonical->encode($identity);
     return {
         %$filesystem,
-        reasons    => \@reasons,
-        identity   => $identity,
-        token      => sha256_hex($canonical_identity),
+        reasons => \@reasons,
+        identity => $identity,
+        token => sha256_hex($canonical_identity),
         selectable => @reasons ? 0 : 1,
     };
 }
@@ -452,7 +452,7 @@ sub options {
 
     # Read-only alone can still replay a journal or log. Suppress recovery
     # explicitly, without modifying UUIDs or repairing the guest filesystem.
-    return 'ro,noload,nodev,nosuid,noexec'            if $filesystem eq 'ext4';
+    return 'ro,noload,nodev,nosuid,noexec' if $filesystem eq 'ext4';
     return 'ro,norecovery,nouuid,nodev,nosuid,noexec' if $filesystem eq 'xfs';
     die 'Unsupported filesystem';
 }
@@ -462,9 +462,9 @@ sub mount {
     $self->command->run(
         [
             '/usr/bin/mount', '--no-canonicalize',
-            '-t',             $target->{fstype},
-            '-o',             $self->options($target->{fstype}),
-            '--',             $self->device_path($target, 1),
+            '-t', $target->{fstype},
+            '-o', $self->options($target->{fstype}),
+            '--', $self->device_path($target, 1),
             "$mountpoint"
         ]
     );

@@ -2,8 +2,8 @@ use strict;
 use warnings;
 use utf8;
 use Test::More;
-use File::Temp  qw(tempdir);
-use Mojo::File  qw(path);
+use File::Temp qw(tempdir);
+use Mojo::File qw(path);
 use Time::HiRes qw(sleep);
 use lib 'lib';
 use Mogura::Scanner::Config;
@@ -15,7 +15,7 @@ path($config->runtime)->make_path;
 # A surviving exec child must keep a second scanner out after its parent
 # closes the lock; releasing only the parent's descriptor is insufficient.
 {
-    my $first  = Mogura::Scanner->new(config => $config);
+    my $first = Mogura::Scanner->new(config => $config);
     my $second = Mogura::Scanner->new(config => $config);
     $first->acquire_lock;
     eval { $second->acquire_lock };

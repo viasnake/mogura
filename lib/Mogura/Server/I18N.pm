@@ -27,7 +27,7 @@ sub translate {
 sub client_messages {
     my ($locale) = @_;
     my $messages = messages($locale);
-    my @keys     = qw(
+    my @keys = qw(
         tag_limit remove_tag inventory_refresh_failed submitting
         start_scan saving save_failed tag_added tag_removed saved
         result_range result_count result_count_one result_filtered result_filtered_one
@@ -44,19 +44,19 @@ sub register {
     $app->hook(
         before_dispatch => sub {
             my ($controller) = @_;
-            my $requested    = $controller->req->url->query->param('lang');
-            my $saved        = $controller->cookie('mogura_language');
-            my $locale       = supported($saved) ? $saved : 'en';
+            my $requested = $controller->req->url->query->param('lang');
+            my $saved = $controller->cookie('mogura_language');
+            my $locale = supported($saved) ? $saved : 'en';
             if ($controller->req->method eq 'GET' && supported($requested)) {
                 $locale = $requested;
                 $controller->cookie(
                     mogura_language => $locale,
                     {
-                        path     => '/',
-                        max_age  => 31536000,
+                        path => '/',
+                        max_age => 31536000,
                         samesite => 'Lax',
                         httponly => 1,
-                        secure   => $controller->req->is_secure ? 1 : 0,
+                        secure => $controller->req->is_secure ? 1 : 0,
                     }
                 );
             }
@@ -64,8 +64,8 @@ sub register {
             $controller->res->headers->content_language($locale);
         }
     );
-    $app->helper(locale          => sub { return shift->stash('locale') // 'en' });
-    $app->helper(l               => sub { my $c = shift; return translate($c->locale, @_) });
+    $app->helper(locale => sub { return shift->stash('locale') // 'en' });
+    $app->helper(l => sub { my $c = shift; return translate($c->locale, @_) });
     $app->helper(locale_messages => sub { return to_json(client_messages(shift->locale)) });
     $app->helper(
         date_time => sub {

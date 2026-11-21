@@ -1,9 +1,9 @@
 package Mogura::Server::Store;
 use Mojo::Base -base;
 use DBI;
-use Digest::SHA      qw(sha256_hex);
-use Mojo::File       qw(path);
-use Mojo::JSON       qw(to_json from_json);
+use Digest::SHA qw(sha256_hex);
+use Mojo::File qw(path);
+use Mojo::JSON qw(to_json from_json);
 use Mogura::Protocol qw(random_id valid_id now artifact_name);
 use Mogura::Server::Tags;
 
@@ -86,7 +86,7 @@ sub inventories {
             {
                 %{from_json($_->{inventory} // '{"disks":[]}')},
                     scanner_id => $_->{id},
-                    stale      => ($_->{seen} // 0) <
+                    stale => ($_->{seen} // 0) <
                     time - 30
             }
         } @$rows
@@ -121,11 +121,11 @@ sub submit {
                 $scanner, $token
             );
             my $record = {
-                status         => 'queued',
-                phase          => 'queued',
+                status => 'queued',
+                phase => 'queued',
                 cleanup_status => 'unknown',
-                target         => $target->{identity},
-                warnings       => []
+                target => $target->{identity},
+                warnings => []
             };
             $db->do(
                 'INSERT INTO jobs(id,scanner,token,created,tags,note,record) VALUES (?,?,?,?,?,?,?)',
@@ -140,8 +140,8 @@ sub cancel {
     my ($self, $id) = @_;
     return $self->transaction(
         sub {
-            my ($db)   = @_;
-            my $scan   = $self->get($id) or return;
+            my ($db) = @_;
+            my $scan = $self->get($id) or return;
             my $status = $scan->{status};
             if ($status eq 'queued') {
                 $db->do(
@@ -223,19 +223,19 @@ sub get {
     my $row = $self->db->selectrow_hashref('SELECT * FROM jobs WHERE id=?', undef, $id) or return;
     return {
         %{from_json($row->{record})},
-        id         => $id,
+        id => $id,
         scanner_id => $row->{scanner},
-        token      => $row->{token},
+        token => $row->{token},
         created_at => $row->{created},
-        tags       => from_json($row->{tags}),
-        note       => $row->{note}
+        tags => from_json($row->{tags}),
+        note => $row->{note}
     };
 }
 
 sub history {
     my ($self, $tag, $page) = @_;
     my $filter = length($tag) ? 'WHERE EXISTS(SELECT 1 FROM json_each(tags) WHERE value=?)' : '';
-    my $rows   = $self->db->selectall_arrayref(
+    my $rows = $self->db->selectall_arrayref(
         "SELECT id, scanner AS scanner_id, created AS created_at, tags, json_extract(record,'\$.status') AS status, json_extract(record,'\$.phase') AS phase, json_extract(record,'\$.cleanup_status') AS cleanup_status FROM jobs $filter ORDER BY created DESC,id DESC LIMIT 51 OFFSET ?",
         {Slice => {}},
         (length($tag) ? ($tag) : ()),
@@ -280,7 +280,7 @@ sub artifact {
 sub receive {
     my ($self, $scanner, $id, $run, $kind, $source, $size, $digest) = @_;
     my $name = artifact_name($kind) or die 'Invalid kind';
-    die 'Unassigned run'    unless $self->owns($scanner, $id, $run);
+    die 'Unassigned run' unless $self->owns($scanner, $id, $run);
     die 'Incomplete upload' unless -s $source == $size;
     open my $fh, '<:raw', $source or die "Open upload: $!";
     die 'Checksum mismatch' unless Digest::SHA->new(256)->addfile($fh)->hexdigest eq $digest;
@@ -288,14 +288,14 @@ sub receive {
         $self->db->selectrow_array('SELECT hash FROM receipts WHERE job=? AND run=? AND kind=?',
         undef, $id, $run, $kind);
     die 'Conflicting receipt' if defined($accepted) && $accepted ne $digest;
-    return                    if defined($accepted) && $self->artifact($id, $kind);
+    return if defined($accepted) && $self->artifact($id, $kind);
 
     if ($kind eq 'log') {
         seek $fh, 0, 0 or die "Seek log: $!";
         while (1) {
             my $read = read $fh, my $chunk, 65536;
             die "Read log: $!" unless defined $read;
-            last               unless $read;
+            last unless $read;
             die 'Expected a text log' if index($chunk, "\0") >= 0;
         }
     }
@@ -333,8 +333,8 @@ sub update_run {
                 or return;
             my $old = from_json($row->{record});
             if ($row->{finished}) {
-                if (   $final
-                    && ($old->{cleanup_status}  // '') eq 'needs_cleanup'
+                if ($final
+                    && ($old->{cleanup_status} // '') eq 'needs_cleanup'
                     && ($data->{cleanup_status} // '') eq 'unmounted'
                     && $data->{sequence} > $old->{sequence})
                 {
@@ -355,9 +355,9 @@ sub update_run {
                 };
             $record->{target} = $old->{target};
             $record->{status} =
-                  $final                               ? $data->{status}
+                $final ? $data->{status}
                 : ($data->{phase} // '') eq 'finished' ? 'transferring'
-                :                                        'running';
+                : 'running';
 
             if ($old->{status} eq 'cancelling') {
                 if (!$final) {

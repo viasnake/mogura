@@ -5,8 +5,8 @@ use Test::Mojo;
 use POSIX qw(_exit);
 use Mojo::UserAgent;
 use Mojo::Server::Daemon;
-use File::Temp  qw(tempdir);
-use Mojo::File  qw(path);
+use File::Temp qw(tempdir);
+use Mojo::File qw(path);
 use Digest::SHA qw(sha256_hex);
 use lib 'lib';
 use Mogura::Server;
@@ -14,23 +14,23 @@ use Mogura::Protocol qw(random_id);
 
 my $state = tempdir(CLEANUP => 1);
 my $store = Mogura::Server::Store->new(state => $state);
-my $app   = Mogura::Server->new(store => $store);
-my $t     = Test::Mojo->new($app);
-my %auth  = (
+my $app = Mogura::Server->new(store => $store);
+my $t = Test::Mojo->new($app);
+my %auth = (
     alpha => {Authorization => 'Bearer ' . ('a' x 64)},
-    beta  => {Authorization => 'Bearer ' . ('b' x 64)}
+    beta => {Authorization => 'Bearer ' . ('b' x 64)}
 );
-my $token    = 'd' x 64;
+my $token = 'd' x 64;
 my $snapshot = {
     scanner_id => 'forged',
-    disks      => [
+    disks => [
         {
-            name    => '/dev/sdb',
+            name => '/dev/sdb',
             targets => [
                 {
-                    token      => $token,
+                    token => $token,
                     selectable => 1,
-                    identity   => {disk => {name => '/dev/sdb'}, partition => {name => '/dev/sdb1'}}
+                    identity => {disk => {name => '/dev/sdb'}, partition => {name => '/dev/sdb1'}}
                 }
             ]
         }
@@ -43,8 +43,8 @@ for my $name (sort keys %auth) {
 }
 $t->get_ok('/api/jobs')->status_is(401);
 my ($id, $other, $run) = map { random_id() } 1 .. 3;
-is($store->submit($id,    'alpha', $token, [], ''), 202, 'Job submitted to alpha');
-is($store->submit($other, 'beta',  $token, [], ''), 202, 'Same disk token on a different scanner');
+is($store->submit($id, 'alpha', $token, [], ''), 202, 'Job submitted to alpha');
+is($store->submit($other, 'beta', $token, [], ''), 202, 'Same disk token on a different scanner');
 $t->get_ok('/api/jobs' => $auth{beta})->status_is(200)->json_is('/job/id', $other);
 my $route = "/api/jobs/$id/$run";
 $t->post_ok("$route/claim" => $auth{beta} => json => {})->status_is(409);
@@ -52,14 +52,14 @@ for (1 .. 2) { $t->post_ok("$route/claim" => $auth{alpha} => json => {})->status
 $t->post_ok("/api/jobs/$id/" . random_id() . "/claim" => $auth{alpha} => json => {})
     ->status_is(409);
 my $progress = {sequence => 2, phase => 'sbom', cleanup_status => 'mounted'};
-$t->post_ok("$route/progress" => $auth{beta}  => json => $progress)->status_is(409);
+$t->post_ok("$route/progress" => $auth{beta} => json => $progress)->status_is(409);
 $t->post_ok("$route/progress" => $auth{alpha} => json => $progress)->status_is(200);
 my $completed =
     {sequence => 5, status => 'completed', phase => 'finished', cleanup_status => 'unmounted'};
 $t->post_ok("$route/complete" => $auth{alpha} => json => $completed)->status_is(409);
 my %files = (
-    syft  => '{"source":{},"artifacts":[],"descriptor":{"name":"syft"}}',
-    cdx   => '{"bomFormat":"CycloneDX","specVersion":"1.6"}',
+    syft => '{"source":{},"artifacts":[],"descriptor":{"name":"syft"}}',
+    cdx => '{"bomFormat":"CycloneDX","specVersion":"1.6"}',
     grype => '{"matches":[],"descriptor":{"name":"grype"}}'
 );
 
@@ -68,13 +68,13 @@ sub upload {
     return $t->put_ok(
         "$route/files/$kind" => {
             %{$auth{$name}},
-            'Content-Type'     => 'application/octet-stream',
+            'Content-Type' => 'application/octet-stream',
             'X-Content-SHA256' => $hash // sha256_hex($bytes)
         } => $bytes
     );
 }
-upload('alpha', 'log',  "binary\0data")->status_is(409);
-upload('beta',  'syft', $files{syft})->status_is(403);
+upload('alpha', 'log', "binary\0data")->status_is(409);
+upload('beta', 'syft', $files{syft})->status_is(403);
 upload('alpha', 'syft', '{}')->status_is(409);
 upload('alpha', 'syft', $files{syft}, '0' x 64)->status_is(409);
 
@@ -126,7 +126,7 @@ chomp $port;
 my $response = Mojo::UserAgent->new->request_timeout(5)->put(
     "http://127.0.0.1:$port$route/files/syft" => {
         %{$auth{alpha}},
-        'Content-Type'     => 'application/octet-stream',
+        'Content-Type' => 'application/octet-stream',
         'X-Content-SHA256' => sha256_hex($files{syft})
     } => $files{syft}
 );
@@ -135,7 +135,7 @@ my $exited = waitpid($pid, POSIX::WNOHANG());
 if (!$exited) { kill 'TERM', $pid; waitpid($pid, 0) }
 is($? & 127, 9, 'Server was killed at the receipt boundary');
 ok(-f $store->directory($id)->child('sbom.syft.json'), 'Final file survives interrupted receipt');
-ok(!$store->artifact($id, 'syft'),                     'Unconfirmed file is not downloadable');
+ok(!$store->artifact($id, 'syft'), 'Unconfirmed file is not downloadable');
 $t = Test::Mojo->new(Mogura::Server->new(store => Mogura::Server::Store->new(state => $state)));
 
 for my $kind (sort keys %files) {
