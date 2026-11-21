@@ -1,11 +1,11 @@
 use Mojo::JSON qw(to_json from_json);
 
 sub save_inventory {
-    my ($store, $snapshot) = @_;
+    my ($store, $snapshot, $scanner) = @_;
     $store->db->do(
         'UPDATE scanners SET seen=?,inventory=? WHERE id=?',
         undef, $snapshot->{updated_at} // time,
-        to_json($snapshot), 'fixture'
+        to_json($snapshot), $scanner // 'fixture'
     );
 }
 

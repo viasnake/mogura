@@ -7,6 +7,9 @@ use Mojo::JSON qw(to_json from_json);
 use Mogura::Protocol qw(random_id valid_id now artifact_name);
 use Mogura::Server::Tags;
 
+use constant BLOCKS_REMOVAL => q{finished=0 OR
+    COALESCE(json_extract(record, '$.cleanup_status'), '') NOT IN ('unmounted', 'not_needed')};
+
 has state =>
     sub { path($ENV{XDG_STATE_HOME} || path($ENV{HOME}, '.local/state'), 'mogura')->to_string };
 
@@ -39,6 +42,7 @@ sub initialize {
         record TEXT NOT NULL, finished INTEGER NOT NULL DEFAULT 0)}
     );
     $db->do('CREATE INDEX IF NOT EXISTS assigned ON jobs(scanner,finished,created)');
+    $db->do('CREATE INDEX IF NOT EXISTS removal_blockers ON jobs(scanner) WHERE ' . BLOCKS_REMOVAL);
     $db->do(
         'CREATE TABLE IF NOT EXISTS receipts(job TEXT, run TEXT, kind TEXT, hash TEXT NOT NULL, indexed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(job,run,kind))'
     );
@@ -104,6 +108,46 @@ sub selectable {
     my @targets = grep { $_ && $_->{selectable} && ($_->{token} // '') eq $token }
         ($inv->{host}, map { @{$_->{targets}} } @{$inv->{disks}});
     return @targets == 1 ? $targets[0] : undef;
+}
+
+# Linux assigns a disk sequence to the whole attachment for the lifetime of a boot.
+sub _attachment {
+    my ($target) = @_;
+    return unless ref($target) eq 'HASH' && ref($target->{disk}) eq 'HASH';
+    my ($boot, $sequence) = ($target->{boot_id}, $target->{disk}{diskseq});
+    return
+        unless defined($boot)
+        && !ref($boot)
+        && $boot =~ /\S/
+        && ($sequence // '') =~ /\A[1-9][0-9]*\z/;
+    return "$boot:$sequence";
+}
+
+sub can_disconnect {
+    my ($self, $scan) = @_;
+    return unless ($scan->{cleanup_status} // '') eq 'unmounted';
+    my $attachment = _attachment($scan->{target}) // return;
+    my $current = $self->selectable($scan->{scanner_id}, $scan->{token}) or return;
+    return unless (_attachment($current->{identity}) // '') eq $attachment;
+
+    my $disk = $scan->{target}{disk};
+    return unless length($disk->{serial} // '') || length($disk->{wwn} // '');
+    for my $field (qw(serial wwn)) {
+        return if ($disk->{$field} // '') ne ($current->{identity}{disk}{$field} // '');
+    }
+
+    my $jobs = $self->db->prepare(
+        q{SELECT json_extract(record, '$.target') FROM jobs WHERE scanner=? AND id<>? AND (}
+            . BLOCKS_REMOVAL
+            . ')');
+    $jobs->execute($scan->{scanner_id}, $scan->{id});
+    while (my $row = $jobs->fetchrow_arrayref) {
+        my $target = defined($row->[0]) ? from_json($row->[0]) : undef;
+        next if ref($target) eq 'HASH' && ($target->{kind} // '') eq 'host';
+        my $other = _attachment($target) // return;
+        return if $attachment eq $other;
+    }
+    return 1;
 }
 
 sub submit {

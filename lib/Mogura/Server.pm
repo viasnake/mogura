@@ -259,23 +259,12 @@ sub _show_scan {
     $scan->{online} = ($seen // 0) >= time - 30;
     my $host = ($scan->{target}{kind} // '') eq 'host';
     $scan->{removal} = $host ? 'system_volume' : 'do_not_disconnect';
-    if (
-        !$host
-        && $scan->{online}
-        && $scan->{cleanup_status} eq 'unmounted'
-        && $self->store->selectable($scan->{scanner_id}, $scan->{token})
-        && !$self->store->db->selectrow_array(
-            q{SELECT 1 FROM jobs WHERE scanner=? AND token=? AND id<>? AND
-            (finished=0 OR json_extract(record,'$.cleanup_status')='needs_cleanup')}, undef,
-            @$scan{qw(scanner_id token id)}
-        )
-        )
-    {
-        $scan->{removal} = 'can_disconnect';
-    }
+    $scan->{removal} = 'can_disconnect'
+        if !$host && $scan->{online} && $self->store->can_disconnect($scan);
     my $artifacts = $self->_artifacts($scan->{id});
     my (%versions, %result_states);
     my $results = Mogura::Server::Results->new(state => $self->store->state);
+
     for my $kind (qw(syft grype)) {
         next unless $artifacts->{$kind};
         my $revision = $results->revision($artifacts->{$kind});

@@ -450,4 +450,111 @@ for my $table ('sun', '') {
     $t->get_ok('/inventory')->status_is(200)->content_like(qr/未対応のパーティションテーブル: \Q$expected\E/);
 }
 
+subtest 'Disconnecting a disk accounts for all its partitions' => sub {
+    my $db = Mogura::Server::Store->new(state => tempdir(CLEANUP => 1))->initialize;
+    my $web = Test::Mojo->new(Mogura::Server->new(store => $db));
+    my %nodes = (
+        '8:16' => {
+            type => 'disk',
+            name => '/dev/sdb',
+            'maj:min' => '8:16',
+            diskseq => 7,
+            serial => 'alpha',
+            pttype => 'gpt'
+        },
+        '8:17' => {
+            type => 'part',
+            name => '/dev/sdb1',
+            'maj:min' => '8:17',
+            fstype => 'ext4',
+            start => 2048
+        },
+        '8:18' => {
+            type => 'part',
+            name => '/dev/sdb2',
+            'maj:min' => '8:18',
+            fstype => 'ext4',
+            start => 8192
+        },
+        '8:32' => {
+            type => 'disk',
+            name => '/dev/sdc',
+            'maj:min' => '8:32',
+            diskseq => 8,
+            serial => 'beta',
+            fstype => 'xfs'
+        },
+    );
+    my $parents = {'8:17' => {'8:16' => 1}, '8:18' => {'8:16' => 1}};
+    my $snapshot = Mogura::Scanner::Disk->new->classify(\%nodes, $parents, {}, [], 'boot-a');
+    my ($attached, $independent) = @{$snapshot->{disks}};
+    my ($a, $b) = map { $_->{token} } @{$attached->{targets}};
+    my $other = $independent->{targets}[0]{token};
+
+    for my $scanner (qw(fixture remote)) {
+        $db->register($scanner, Mogura::Server::random_id() x 2);
+        save_inventory($db, $snapshot, $scanner);
+    }
+    my $submit = sub {
+        my ($scanner, $token) = @_;
+        my $id = Mogura::Server::random_id();
+        is($db->submit($id, $scanner, $token, [], ''), 202, "Queue partition on $scanner");
+        return $id;
+    };
+    my $id = $submit->('fixture', $a);
+    my $run = Mogura::Server::random_id();
+    my $final =
+        {sequence => 1, phase => 'finished', status => 'partial', cleanup_status => 'unmounted'};
+    ok($db->claim('fixture', $id, $run) && $db->update_run('fixture', $id, $run, $final, 1));
+    my $page = sub {
+        my ($safe, $why) = @_;
+        $web->get_ok("/scans/$id")->status_is(200);
+        like($web->tx->res->text,
+            $safe ? qr/Safe to disconnect/ : qr/Do not disconnect this disk/, $why);
+    };
+    $submit->('remote', $b);
+    $submit->('fixture', $other);
+    $page->(1, 'Independent disks and scanners can keep working');
+
+    my $sibling = $submit->('fixture', $b);
+    $page->(0, 'Another partition is queued');
+    ok($db->claim('fixture', $sibling, $run));
+    $page->(0, 'Another partition is running');
+    ok($db->cancel($sibling));
+    $page->(0, 'Another partition is cancelling');
+    ok($db->update_run('fixture', $sibling, $run, {%$final, cleanup_status => 'needs_cleanup'}, 1));
+    $page->(0, 'Finished sibling still needs cleanup');
+    ok($db->update_run('fixture', $sibling, $run, {%$final, sequence => 2}, 1));
+    $page->(1, 'Both partitions are unmounted');
+
+    my $current = $snapshot->{disks}[0]{targets}[0]{identity};
+    for my $boot (undef, 'new-boot') {
+        $current->{boot_id} = $boot;
+        save_inventory($db, $snapshot);
+        $page->(0, 'Inventory must confirm the original attachment');
+    }
+    $current->{boot_id} = 'boot-a';
+    delete $current->{disk}{diskseq};
+    save_inventory($db, $snapshot);
+    $page->(0, 'A device name alone cannot confirm removal');
+    $current->{disk}{diskseq} = 7;
+    $current->{disk}{serial} = 'replacement';
+    save_inventory($db, $snapshot);
+    $page->(0, 'Conflicting hardware identity cannot confirm removal');
+    $current->{disk}{serial} = 'alpha';
+    delete $snapshot->{disks}[0]{targets}[1]{identity}{disk}{diskseq};
+    save_inventory($db, $snapshot);
+    my $unknown = $submit->('fixture', $b);
+    $page->(0, 'A queued target without a disk identity could be on the same disk');
+    ok($db->cancel($unknown));
+    $page->(1, 'Cancelling before claim needs no cleanup');
+    $snapshot->{updated_at} = time - 60;
+    save_inventory($db, $snapshot);
+    $page->(0, 'Stale inventory cannot confirm removal');
+    delete $snapshot->{updated_at};
+    save_inventory($db, $snapshot);
+    $db->db->do("UPDATE scanners SET seen=NULL WHERE id='fixture'");
+    $page->(0, 'An offline scanner cannot confirm removal');
+};
+
 done_testing;
