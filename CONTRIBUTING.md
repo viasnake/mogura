@@ -1,6 +1,6 @@
 # Contributing
 
-Report bugs and suggest changes in [GitHub Issues](https://github.com/viasnake/outcrop/issues). For a bug, include the Mogura version or commit, host OS, steps to reproduce, and the expected and actual behavior. [Report security issues privately](SECURITY.md).
+Report bugs and suggest changes in [GitHub Issues](https://github.com/viasnake/mogura/issues). For a bug, include the Mogura version or commit, host OS, steps to reproduce, and the expected and actual behavior. [Report security issues privately](SECURITY.md).
 
 For a pull request, describe the problem, the change, and its impact. Include the checks you ran when they help reviewers assess the change.
 
@@ -31,7 +31,7 @@ mise run test:results
 
 ## Build a distribution
 
-Build the archive after completing the development setup.
+Set the distribution version in `lib/Mogura.pm` and describe the user-visible changes under the same version in `Changes`. Build from a clean checkout after completing the development setup.
 
 ```sh
 mise exec -- perl -I "$PWD/.tools/carton/lib/perl5" .tools/carton/bin/carton exec sh -eu <<'SH'
@@ -42,3 +42,16 @@ SH
 ```
 
 Set `MOGURA_TEST_SYFT` to a Syft executable to exercise exclusion rules on temporary fixtures. The normal test suite uses local HTTP and simulated disk operations.
+
+Install the archive in an empty prefix and start it outside the checkout. Use the version you just built.
+
+```sh
+archive="$PWD/Mogura-0.01.tar.gz"
+stage=$(mktemp -d)
+cd "$stage"
+env -u PERL5LIB -u PERL5OPT cpanm --local-lib-contained "$stage/prefix" "$archive"
+env -u PERL5LIB -u PERL5OPT "$stage/prefix/bin/mogura" --version
+env -u PERL5LIB -u PERL5OPT "$stage/prefix/bin/mogura" server --state "$stage/state" --listen http://127.0.0.1:8082
+```
+
+Open the web interface, switch languages, and check that the stylesheet loads. Stop the server with Ctrl-C and record the archive checksum with `sha256sum "$archive"`.

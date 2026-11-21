@@ -1,6 +1,6 @@
 # Mogura
 
-Inspect a Linux host or an attached ext4 or XFS disk with Syft and Grype. Start the server as your regular user.
+Inspect a Linux host or an attached ext4 or XFS disk with Syft and Grype. Install the distribution with Perl 5.34 or later and start the server as your regular user.
 
 ```sh
 # From a locally built distribution

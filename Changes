@@ -1,4 +1,10 @@
 Revision history for Mogura
 
 0.01
-    - Separate the result server and authenticated pull scanners.
+    - Run the web server as an ordinary user and connect Linux scanners with
+      individual credentials. Each scanner reports its disks and claims its
+      assigned jobs.
+    - Scan the host filesystem or a read-only ext4 or XFS disk with Syft and
+      Grype. Cancel queued or running scans and check disk cleanup status.
+    - Search packages and vulnerabilities, edit tags and notes, and download
+      the original artifacts in the English or Japanese web interface.

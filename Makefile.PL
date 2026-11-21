@@ -19,7 +19,7 @@ WriteMakefile(
     NAME => 'Mogura',
     VERSION_FROM => 'lib/Mogura.pm',
     ABSTRACT => 'Read-only Linux disk SBOM and vulnerability inspection with a web UI',
-    AUTHOR => 'snake <admin@viasnake.com>',
+    AUTHOR => 'Takuya Oshima <admin@viasnake.com>',
     LICENSE => 'apache_2_0',
     MIN_PERL_VERSION => '5.034000',
     CONFIGURE_REQUIRES => {'ExtUtils::MakeMaker' => '6.64'},
@@ -39,10 +39,10 @@ WriteMakefile(
         resources => {
             repository => {
                 type => 'git',
-                url => 'https://github.com/viasnake/outcrop.git',
-                web => 'https://github.com/viasnake/outcrop'
+                url => 'https://github.com/viasnake/mogura.git',
+                web => 'https://github.com/viasnake/mogura'
             },
-            bugtracker => {web => 'https://github.com/viasnake/outcrop/issues'},
+            bugtracker => {web => 'https://github.com/viasnake/mogura/issues'},
         },
         prereqs => {develop => {requires => {'Perl::Tidy' => '20260826'}}},
     },
