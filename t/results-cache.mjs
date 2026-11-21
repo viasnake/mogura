@@ -17,6 +17,7 @@ let buildPolls = 0;
 let failBuild = false;
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost');
+  if (url.pathname.startsWith('/scans/')) requests.push(url.href);
   const script = scripts.get(url.pathname.slice(1));
   if (script) {
     response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
@@ -36,7 +37,6 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname.includes('/results/')) {
-    requests.push(url.href);
     response.setHeader('Content-Type', 'application/json');
     if (pending-- > 0) {response.writeHead(202); response.end('{"pending":1}'); return;}
     const total = 12050;
