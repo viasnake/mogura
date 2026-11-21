@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Errno qw(EIO);
 use File::Temp  qw(tempdir);
 use Mojo::File  qw(path);
 use Time::HiRes qw(time);
@@ -15,6 +16,15 @@ my $argument = '$(touch unsafe); `touch unsafe`';
 my $result   = $command->run([$^X, '-e', 'print $ARGV[0]', $argument], cwd => $dir);
 is($result, $argument, 'Shell metacharacters stay literal');
 ok(!-e "$dir/unsafe", 'No shell side effects');
+
+{
+    no warnings 'redefine';
+    local *IO::Handle::blocking = sub { $! = EIO; return undef };
+    my $marker = "$dir/launched";
+    eval { $command->run(['/usr/bin/touch', $marker]) };
+    like($@, qr/nonblocking/i, 'Pipe setup failure is reported');
+    ok(!-e $marker, 'The command never starts without a nonblocking output pipe');
+}
 
 # Timeout and nonzero exit must remain observable failures.
 my $start = time;

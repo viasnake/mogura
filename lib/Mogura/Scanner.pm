@@ -237,16 +237,30 @@ sub _identify {
 sub tick {
     my ($self) = @_;
     $self->_identify unless $self->{identified};
+    $self->_reap_children;
+    my ($pending, $blocked) = $self->_reconcile_spool;
+    $self->_send_inventory($pending, $blocked)
+        if @$blocked || time >= ($self->{inventory_due} // 0);
+    return if @$blocked;
+    $self->_claim_and_start($pending);
+}
+
+sub _reap_children {
+    my ($self) = @_;
     my $active = $self->active;
     for my $id (keys %$active) {
         next unless waitpid($active->{$id}{pid}, WNOHANG) > 0;
         my $child = delete $active->{$id};
-        if (!$child->{slot}) {
-            my $delay = $? ? ($self->{delivery_delay} // 1) * 2 : 0;
-            $self->{delivery_delay} = $delay > 30 ? 30 : $delay;
-            $self->{delivery_due}   = time + $self->{delivery_delay};
-        }
+        next if $child->{slot};
+        my $delay = $? ? ($self->{delivery_delay} || 1) * 2 : 0;
+        $self->{delivery_delay} = $delay > 30 ? 30 : $delay;
+        $self->{delivery_due} = time + $self->{delivery_delay};
     }
+}
+
+sub _reconcile_spool {
+    my ($self) = @_;
+    my $active = $self->active;
     my $mounts = $self->managed_mounts;
     my %owned =
         map { ($self->config->mounts . "/$_") => 1 } grep { $active->{$_}{slot} } keys %$active;
@@ -262,7 +276,10 @@ sub tick {
             unless $intent->{id} eq $id && valid_id($intent->{run});
         die 'Restore the runtime directory recorded for the outstanding scan'
             unless $intent->{runtime} eq $self->config->runtime;
-        if (!$intent->{started}) { $pending{$id} = $intent; next }
+        unless ($intent->{started}) {
+            $pending{$id} = $intent;
+            next;
+        }
         if (my $child = $active->{$id}) {
             my $scan = $self->spool->get($id);
             push @blocked, $id if $scan && $scan->{cleanup_status} eq 'needs_cleanup';
@@ -291,34 +308,41 @@ sub tick {
         $self->_fork_job($id, sub { $self->_transfer($dir, $intent, $scan) }, 0);
         $sending = 1;
     }
-    if (time >= ($self->{inventory_due} // 0) || @blocked) {
-        my $inventory = eval { $self->disk->inventory }
-            // {disks => [], errors => ["Disk discovery failed: $@"]};
-        $inventory->{blocked} = \@blocked;
-        my $reply = $self->client->request('POST', '/inventory', $inventory);
-        for my $request (@{$reply->{cancel} // []}) {
-            my $id = $request->{id};
-            if (my $intent = $pending{$id}) {
-                next unless $intent->{run} eq $request->{run};
-                $self->_retire_unstarted($intent, 1);
-                delete $pending{$id};
-                next;
-            }
-            my $child = $active->{$id} or next;
-            next unless $child->{slot} && $child->{run} eq $request->{run};
-            next if $child->{stop_sent};
+    return (\%pending, \@blocked);
+}
 
-            # This direct child cannot have its PID reused before we reap it.
-            $child->{stop_sent} = kill 'TERM', $child->{pid};
+sub _send_inventory {
+    my ($self, $pending, $blocked) = @_;
+    my $inventory = eval { $self->disk->inventory }
+        // {disks => [], errors => ["Disk discovery failed: $@"]};
+    $inventory->{blocked} = $blocked;
+    my $reply = $self->client->request('POST', '/inventory', $inventory);
+    for my $request (@{$reply->{cancel} // []}) {
+        my $id = $request->{id};
+        if (my $intent = $pending->{$id}) {
+            next unless $intent->{run} eq $request->{run};
+            $self->_retire_unstarted($intent, 1);
+            delete $pending->{$id};
+            next;
         }
-        $self->{inventory_due} = time + $self->config->inventory_interval;
+        my $child = $self->active->{$id} or next;
+        next unless $child->{slot} && $child->{run} eq $request->{run};
+        next if $child->{stop_sent};
+
+        # This direct child cannot have its PID reused before we reap it.
+        $child->{stop_sent} = kill 'TERM', $child->{pid};
     }
-    return if @blocked;
+    $self->{inventory_due} = time + $self->config->inventory_interval;
+}
+
+sub _claim_and_start {
+    my ($self, $pending) = @_;
+    my $active = $self->active;
     my %slots = map { $_->{slot} => 1 } values %$active;
     my ($slot) = grep { !$slots{$_} } 1 .. $self->config->jobs;
     return unless $slot;
     my $limit = $self->_capacity or return;
-    my ($intent) = values %pending;
+    my ($intent) = values %$pending;
     unless ($intent) {
         my $job = $self->client->request('GET', '/jobs')->{job} or return;
         $intent = {

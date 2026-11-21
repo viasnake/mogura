@@ -1,7 +1,7 @@
 package Mogura::Scanner::Command;
 use Mojo::Base -base;
 
-use Fcntl       qw(F_GETFL F_SETFL O_NONBLOCK);
+use IO::Handle ();
 use POSIX       qw(setsid WNOHANG);
 use Time::HiRes qw(time sleep);
 
@@ -12,6 +12,7 @@ sub run {
     # is interpreted by a shell, including strings obtained from guest files.
     die 'Invalid command' unless ref $arguments eq 'ARRAY' && $arguments->[0] =~ m{\A/};
     pipe my $reader, my $writer or die "pipe: $!";
+    defined $reader->blocking(0) or die "Set command output pipe to nonblocking: $!";
     my $pid = fork;
     die "fork: $!" unless defined $pid;
 
@@ -23,8 +24,6 @@ sub run {
     }
 
     close $writer;
-    my $flags = fcntl($reader, F_GETFL, 0);
-    fcntl($reader, F_SETFL, $flags | O_NONBLOCK);
 
     my $output = '';
     my ($status, $failure);

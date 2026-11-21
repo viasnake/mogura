@@ -170,6 +170,7 @@ ok($store->owns('east', $a, $intent->{run}) && !$intent->{started},
     ok(!$store->artifact($a, 'log'), 'Disconnected upload has no receipt');
 }
 $east->client->fail_upload(1);
+$east->{delivery_delay} = 0; # Previous successful delivery reset the backoff.
 $root->child('west/pause')->spurt('');
 $east->tick;
 $west->tick;
