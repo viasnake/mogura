@@ -24,16 +24,20 @@ run = "node t/results-cache.mjs"
 
 [tasks.format]
 description = "Format Perl sources with the repository style"
-run = "perl -I '{{config_root}}/.tools/carton/lib/perl5' '{{config_root}}/.tools/carton/bin/carton' exec perltidy -b -bext=/ Makefile.PL cpanfile script/outcrop script/outcrop-web script/benchmark-results lib/App/Outcrop.pm lib/App/Outcrop/*.pm t/*.t"
+run = "perl -I '{{config_root}}/.tools/carton/lib/perl5' '{{config_root}}/.tools/carton/bin/carton' exec perl local/bin/perltidy -b -bext=/ Makefile.PL cpanfile script/mogura script/benchmark-results lib/Mogura.pm lib/Mogura/*.pm lib/Mogura/Server/*.pm lib/Mogura/Scanner/*.pm t/*.t t/lib/*.pl"
 
 [tasks."format:check"]
 description = "Check Perl source formatting without changing files"
 run = """
-for source_file in Makefile.PL cpanfile script/outcrop script/outcrop-web script/benchmark-results lib/App/Outcrop.pm lib/App/Outcrop/*.pm t/*.t; do
-    perl -I '{{config_root}}/.tools/carton/lib/perl5' '{{config_root}}/.tools/carton/bin/carton' exec perltidy --assert-tidy -st "$source_file" > /dev/null || exit 1
+for source_file in Makefile.PL cpanfile script/mogura script/benchmark-results lib/Mogura.pm lib/Mogura/*.pm lib/Mogura/Server/*.pm lib/Mogura/Scanner/*.pm t/*.t t/lib/*.pl; do
+    perl -I '{{config_root}}/.tools/carton/lib/perl5' '{{config_root}}/.tools/carton/bin/carton' exec perl local/bin/perltidy --assert-tidy -st "$source_file" > /dev/null || exit 1
 done
 """
 
 [tasks."deps:update"]
 description = "Resolve cpanfile changes and update cpanfile.snapshot for review"
 run = "perl -I '{{config_root}}/.tools/carton/lib/perl5' '{{config_root}}/.tools/carton/bin/carton' install"
+
+[tasks.benchmark]
+description = "Measure streaming index construction and bounded page queries"
+run = "perl -I '{{config_root}}/.tools/carton/lib/perl5' '{{config_root}}/.tools/carton/bin/carton' exec perl script/benchmark-results"

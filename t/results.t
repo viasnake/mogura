@@ -6,14 +6,12 @@ use File::Temp qw(tempdir);
 use Mojo::File qw(path);
 use Mojo::JSON qw(encode_json);
 use lib 'lib';
-use App::Outcrop::Config;
-use App::Outcrop::Results;
-use App::Outcrop::Scan;
-use App::Outcrop::ResultStream;
+use Mogura::Server::Results;
+use Mogura::ResultStream;
 
 my $root    = tempdir(CLEANUP => 1);
 my $source  = path($root, 'grype.json');
-my $results = App::Outcrop::Results->new(config => App::Outcrop::Config->new(state => $root));
+my $results = Mogura::Server::Results->new(state => $root);
 my $file    = $results->location('a' x 32, 'grype');
 my @matches = map {
     {
@@ -78,11 +76,11 @@ like($@, qr/count mismatch/, 'Missing row is diagnosed');
 $db->disconnect;
 $results->build($source, $file, 'grype', $revision, force => 1);
 
-my $scanner  = App::Outcrop::Scan->new;
+my $scanner  = 'Mogura::ResultStream';
 my $envelope = $scanner->valid_artifact($source, 'grype');
 is_deeply($envelope->{matches}, [], 'Validation retains no full result array');
 is($envelope->{descriptor}{db}{valid}, 1, 'Validation keeps database identity');
-is_deeply($envelope->{ignoredMatches}, [], 'Unused large arrays discarded');
+ok(!exists $envelope->{ignoredMatches}, 'Unused large arrays discarded');
 for my $invalid ('{"matches":[{}]', '{}{}', '{"matches":[{}],"descriptor":',
     '[]', '{"matches":{}}', '{"matches":[],"descriptor":{"name":"syft"}}')
 {
@@ -109,7 +107,7 @@ my $name  = ('境界"\\' x 30000);
 $large->spurt(
     encode_json({artifacts => [{name => $name}], descriptor => {name => 'syft'}, source => {}}));
 my @rows;
-App::Outcrop::ResultStream->read($large, 'syft', sub { push @rows, $_[0] });
+Mogura::ResultStream->read($large, 'syft', sub { push @rows, $_[0] });
 is($rows[0]{name}, $name, 'UTF-8 and escapes survive chunk boundaries');
 is($scanner->valid_artifact($large, 'syft')->{descriptor}{name},
     'syft', 'Syft validation uses streaming envelope');

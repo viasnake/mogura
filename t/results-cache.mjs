@@ -8,8 +8,8 @@ import {chromium} from 'playwright';
 
 // Use real IndexedDB transactions, Blob persistence and worker lifetimes.
 // An in-memory API mock cannot establish rollback or reopen behavior.
-const scripts = new Map(await Promise.all(['i18n.js', 'result-cache.js', 'results-worker.js', 'results.js'].map(async name => [name, await readFile(`public/${name}`)])));
-const catalogs = Object.fromEntries(await Promise.all(['ja', 'en'].map(async locale => [locale, JSON.parse(await readFile(`public/locales/${locale}.json`, 'utf8'))])));
+const scripts = new Map(await Promise.all(['i18n.js', 'result-cache.js', 'results-worker.js', 'results.js'].map(async name => [name, await readFile(`lib/Mogura/Server/public/${name}`)])));
+const catalogs = Object.fromEntries(await Promise.all(['ja', 'en'].map(async locale => [locale, JSON.parse(await readFile(`lib/Mogura/Server/public/locales/${locale}.json`, 'utf8'))])));
 const requests = [];
 let pending = 0;
 let generation = 0;
@@ -64,7 +64,7 @@ const server = createServer((request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const profile = await mkdtemp(join(tmpdir(), 'outcrop-idb-'));
+const profile = await mkdtemp(join(tmpdir(), 'mogura-idb-'));
 let context;
 const open = async () => {
   context = await chromium.launchPersistentContext(profile, {headless: true});

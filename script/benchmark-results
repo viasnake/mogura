@@ -5,14 +5,13 @@ use lib 'lib';
 use Mojo::File  qw(path);
 use Mojo::JSON  qw(encode_json);
 use Time::HiRes qw(time);
-use App::Outcrop::Config;
-use App::Outcrop::Results;
+use Mogura::Server::Results;
 
 # Run through carton exec from the repository root. The synthetic source and
 # derived index stay under ignored var/; no disks or real scan data are used.
 my $count = $ARGV[0] // 131072;
 die "Usage: benchmark-results [row-count]\n" unless $count =~ /\A[1-9][0-9]*\z/;
-my $directory = path('var/results-benchmark')->make_path;
+my $directory = path('var/mogura-results-benchmark')->make_path;
 my $source    = $directory->child('vulnerabilities.grype.json');
 open my $out, '>:raw', $source or die $!;
 print {$out} '{"matches":[';
@@ -32,8 +31,7 @@ for my $number (1 .. $count) {
 }
 print {$out} '],"descriptor":{"name":"grype"}}';
 close $out or die $!;
-my $results =
-    App::Outcrop::Results->new(config => App::Outcrop::Config->new(state => "$directory"));
+my $results  = Mogura::Server::Results->new(state => "$directory");
 my $file     = $results->location('a' x 32, 'grype');
 my $revision = $results->revision($source);
 my $started  = time;

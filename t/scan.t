@@ -6,9 +6,9 @@ use File::Temp  qw(tempdir);
 use Mojo::File  qw(path);
 use Mojo::JSON  qw(encode_json);
 use lib 'lib';
-use App::Outcrop::Config;
-use App::Outcrop::Store;
-use App::Outcrop::Scan;
+use Mogura::Scanner::Config;
+use Mogura::Scanner::Spool;
+use Mogura::Scanner::Scan;
 
 # These two local fixtures exercise real scan orchestration using ordinary
 # temporary directories; no block device or external scanner is involved.
@@ -82,7 +82,7 @@ use App::Outcrop::Scan;
     sub resolve {
         return {kind => 'host', identity => {kind => 'host', partition => {name => '/'}}};
     }
-    sub host_exclusions { return ['./proc', './var/lib/outcrop'] }
+    sub host_exclusions { return ['./proc', './var/lib/mogura'] }
     sub make_readonly   { die 'Live root must never change block-device flags' }
     sub mount           { die 'Live root must never be mounted' }
     sub verify_mount    { die 'Live root is not a guest mount' }
@@ -164,15 +164,14 @@ my $sequence = 0;
 
 sub scan_case {
     my ($failure, $kind) = @_;
-    my $directory = tempdir(CLEANUP => 1);
-    my $config    = App::Outcrop::Config->new(state => $directory, runtime => "$directory/run");
-    my $store     = App::Outcrop::Store->new(config => $config, writable => 1);
-    $store->initialize;
+    my $directory  = tempdir(CLEANUP => 1);
+    my $config     = Mogura::Scanner::Config->new(state => $directory, runtime => "$directory/run");
+    my $store      = Mogura::Scanner::Spool->new(config => $config);
     my $events     = [];
     my $disk_class = ($kind // '') eq 'host' ? 'HostScanDisk' : 'ScanDisk';
     my $disk       = $disk_class->new(failure => $failure, events => $events);
     my $tools      = ScanTools->new(failure => $failure, events => $events);
-    my $scanner    = App::Outcrop::Scan->new(
+    my $scanner    = Mogura::Scanner::Scan->new(
         config  => $config,
         store   => $store,
         disk    => $disk,
@@ -211,34 +210,6 @@ for my $failure (qw(identity readonly options mount syft)) {
             && $store->artifact($scan->{id}, 'cdx')
             && $store->artifact($scan->{id}, 'grype'),
         'All artifacts published without distribution metadata'
-    );
-}
-
-# Completed scans publish private indexes before exposing completion.
-{
-    my ($scan, $store) = scan_case('');
-    my $results = App::Outcrop::Results->new(config => $store->config);
-    for my $kind (qw(syft grype)) {
-        my $file = $results->published_location($scan->{id}, $kind);
-        ok($results->ready($file, $results->revision($store->artifact($scan->{id}, $kind))),
-            "$kind index ready on scan completion");
-        ok(!-e $results->location($scan->{id}, $kind), 'Scanner does not write Web rebuild files');
-    }
-}
-{
-    no warnings 'redefine';
-    my $build = App::Outcrop::Results->can('build');
-    local *App::Outcrop::Results::build = sub {
-        die 'Injected index failure' if $_[3] eq 'grype';
-        return $build->(@_);
-    };
-    my ($scan, $store) = scan_case('');
-    is($scan->{status}, 'completed', 'Index failure preserves successful audit status');
-    ok($store->artifact($scan->{id}, 'grype'), 'Raw audit survives index failure');
-    like(
-        $scan->{result_index_errors}{grype},
-        qr/Injected index failure/,
-        'Index failure is recorded for recovery'
     );
 }
 
@@ -310,10 +281,10 @@ for my $scope ('separate-filesystems', 'missing-scope') {
 
 # A stop signal caught by a best-effort scope check must still stop the scan.
 {
-    my $guest_path = App::Outcrop::Scan->can('guest_path');
+    my $guest_path = Mogura::Scanner::Scan->can('guest_path');
     my $signalled  = 0;
     no warnings 'redefine';
-    local *App::Outcrop::Scan::guest_path = sub {
+    local *Mogura::Scanner::Scan::guest_path = sub {
         kill 'TERM', $$ unless $signalled++;
         return $guest_path->(@_);
     };
@@ -357,7 +328,7 @@ for my $kind ('clone', 'host') {
     symlink '/usr/os-release', "$root/etc/os-release" or die $!;
     path($root, 'etc/fstab')
         ->spurt("UUID=root / ext4 defaults 0 1\nUUID=var /var ext4 defaults 0 2\n");
-    my $scanner = App::Outcrop::Scan->new;
+    my $scanner = Mogura::Scanner::Scan->new;
     is(
         "" . $scanner->guest_path($root, 'etc/os-release'),
         "$root/usr/os-release",
@@ -379,7 +350,7 @@ for my $failure ('', 'syft', 'grype', 'stop') {
     is($scan->{cleanup_status}, 'not_needed',        'Live root never needs mount cleanup');
     ok(!grep($_ eq 'mount' || $_ eq 'unmount', @$events), 'No live mount or unmount was attempted');
     is($tools->arguments->[2], 'dir:/', 'Live scanner source cannot be supplied by the request');
-    ok(grep($_ eq './var/lib/outcrop', @{$tools->arguments}),
+    ok(grep($_ eq './var/lib/mogura', @{$tools->arguments}),
         'Live scanner receives output exclusion');
     like(
         join(' ', @{$scan->{warnings}}),
@@ -392,8 +363,8 @@ for my $failure ('', 'syft', 'grype', 'stop') {
 # exits; distinct disks remain independent.
 {
     my $dir     = tempdir(CLEANUP => 1);
-    my $config  = App::Outcrop::Config->new(state => $dir, runtime => "$dir/run");
-    my $scanner = App::Outcrop::Scan->new(config => $config);
+    my $config  = Mogura::Scanner::Config->new(state => $dir, runtime => "$dir/run");
+    my $scanner = Mogura::Scanner::Scan->new(config => $config);
     my $lock    = $scanner->_acquire_lock('disk-fixture');
     my $pid     = fork;
     die "fork: $!" unless defined $pid;
@@ -412,7 +383,7 @@ for my $failure ('', 'syft', 'grype', 'stop') {
 
 {
     my ($completed, $store) = scan_case('');
-    my $scanner = App::Outcrop::Scan->new(config => $store->config, store => $store);
+    my $scanner = Mogura::Scanner::Scan->new(config => $store->config, store => $store);
     eval { $scanner->run({id => $completed->{id}, token => 'b' x 64, tags => ['duplicate']}) };
     like($@, qr/already been processed/, 'Duplicate scan ID cannot start again');
     is_deeply($store->get($completed->{id}),

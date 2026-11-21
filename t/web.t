@@ -7,24 +7,18 @@ use File::Temp qw(tempdir);
 use Mojo::File qw(path);
 use Mojo::JSON qw(encode_json);
 use lib 'lib';
-use App::Outcrop;
-use App::Outcrop::Store;
-use App::Outcrop::Config;
-use App::Outcrop::Disk;
-use Minion;
+use Mogura::Server;
+use Mogura::Server::Store;
+use Mogura::Scanner::Disk;
+require './t/lib/server-fixture.pl';
 
-# Keep the real SQLite store and Minion queue, replacing only disk input and
-# generated scan files with small, public fixture documents.
-my $root   = tempdir(CLEANUP => 1);
-my $config = App::Outcrop::Config->new(state => $root, runtime => "$root/run");
-my $store  = App::Outcrop::Store->new(config => $config, writable => 1);
-$store->initialize;
-path($root, 'queue')->make_path;
-path($root, 'queue/submit.lock')->spurt('');
-path($root, 'web.secret')->spurt('test-secret-' x 8);
+# Seed the server database with small, public scan artifacts.
+my $root  = tempdir(CLEANUP => 1);
+my $store = Mogura::Server::Store->new(state => $root)->initialize;
+$store->register('fixture', 'a' x 64);
 my $token = 'f' x 64;
-$store->atomic_json(
-    "$root/inventory.json",
+save_inventory(
+    $store,
     {
         updated_at => time,
         errors     => [],
@@ -59,49 +53,47 @@ my $scan    = {
     cleanup_status => 'unmounted',
     warnings       => [$payload]
 };
-$store->save($scan);
+seed_scan($store, $scan);
 my $dir = $store->directory($id);
-$store->atomic_json(
-    $dir->child('sbom.syft.json'),
-    {
-        artifacts => [
-            {
-                name      => $payload,
-                version   => '1.0',
-                type      => 'deb',
-                foundBy   => 'fixture',
-                locations => [{path => '/var/lib/dpkg/status'}]
-            }
-        ]
-    }
-);
-$store->atomic_json(
-    $dir->child('vulnerabilities.grype.json'),
-    {
-        matches => [
-            {
-                artifact      => {name => $payload},
-                vulnerability => {
-                    id       => 'CVE-EXAMPLE-001',
-                    severity => 'High',
-                    fix      => {versions => ['1.1'], state => 'fixed'}
+seed_artifact(
+    $store, $id, 'syft',
+    encode_json(
+        {
+            artifacts => [
+                {
+                    name      => $payload,
+                    version   => '1.0',
+                    type      => 'deb',
+                    foundBy   => 'fixture',
+                    locations => [{path => '/var/lib/dpkg/status'}]
                 }
-            }
-        ]
-    }
+            ]
+        }
+    )
 );
-$store->log($id, $payload);
-my $queue = Minion->new(SQLite => $config->queue);
-my $app   = App::Outcrop->new(
-    settings => $config,
-    store    => App::Outcrop::Store->new(config => $config),
-    queue    => $queue
+seed_artifact(
+    $store, $id, 'grype',
+    encode_json(
+        {
+            matches => [
+                {
+                    artifact      => {name => $payload},
+                    vulnerability => {
+                        id       => 'CVE-EXAMPLE-001',
+                        severity => 'High',
+                        fix      => {versions => ['1.1'], state => 'fixed'}
+                    }
+                }
+            ]
+        }
+    )
 );
+my $app = Mogura::Server->new(store => $store);
 $app->log->level('error');
 my $t = Test::Mojo->new($app);
 $t->ua->on(start => sub { $_[1]->req->headers->accept_language('ja') });
 
-# Exercise the HTTP boundary with the same read-only scan store used by Web.
+# Exercise the browser routes against the persisted scans.
 # Assertions concern data, authorization, and side effects, not page layout.
 $t->get_ok('/history')->status_is(200)->content_unlike(qr/<script>alert/);
 $t->get_ok("/scans/$id")->status_is(200)->content_unlike(qr/<script>alert/);
@@ -115,7 +107,7 @@ $t->get_ok("/scans/$id/download/secret")->status_is(404);
 $t->get_ok('/scans/invalid/download/metadata')->status_is(404);
 $t->get_ok("/scans/$id/download/..%2F..%2Fweb.secret")->status_is(404);
 
-my $results     = App::Outcrop::Results->new(config => $config);
+my $results     = Mogura::Server::Results->new(state => $root);
 my $result_file = $results->location($id, 'grype');
 $t->get_ok("/scans/$id/results/grype")->status_is(409);
 ok(!-e $result_file, 'Reading an old result never creates its index');
@@ -170,7 +162,7 @@ is($dir->child('vulnerabilities.grype.json')->slurp,
 }
 {
     no warnings 'redefine';
-    local *App::Outcrop::Results::verify = sub { die 'Injected verification failure' };
+    local *Mogura::Server::Results::verify = sub { die 'Injected verification failure' };
     $t->post_ok("/scans/$id/results/grype/rebuild" => form => {csrf_token => $result_csrf})
         ->status_is(202);
     $status_url = $t->tx->res->json->{status_url};
@@ -181,8 +173,8 @@ $t->get_ok($rebuilt_url)->status_is(200)->json_is('/total', 1);
 ok(!-e "$result_file.part", 'Failed rebuild cleans temporary index');
 {
     no warnings 'redefine';
-    my $save_status = App::Outcrop::Results->can('save_build_status');
-    local *App::Outcrop::Results::save_build_status = sub {
+    my $save_status = Mogura::Server::Results->can('save_build_status');
+    local *Mogura::Server::Results::save_build_status = sub {
         die 'Injected status write failure' unless $_[2]{state} eq 'running';
         return $save_status->(@_);
     };
@@ -197,15 +189,14 @@ $t->get_ok($status_url)->status_is(200)->json_is('/state', 'failed');
     ok($lock, 'Status write failure cannot leave rebuilds locked');
 }
 $scan->{status} = 'running';
-$store->save($scan);
+$store->db->do('UPDATE jobs SET record=? WHERE id=?', undef, Mojo::JSON::to_json($scan), $id);
 $t->post_ok("/scans/$id/results/grype/rebuild" => form => {csrf_token => $result_csrf})
     ->status_is(409);
 $scan->{status} = 'completed';
-$store->save($scan);
+$store->db->do('UPDATE jobs SET record=? WHERE id=?', undef, Mojo::JSON::to_json($scan), $id);
 
 sub job_count {
-    return $queue->backend->sqlite->db->query('SELECT count(*) AS count FROM minion_jobs')
-        ->hash->{count};
+    return $store->db->selectrow_array('SELECT COUNT(*) FROM jobs WHERE finished=0');
 }
 
 for my $host ('localhost:8080', '127.0.0.1:8080', '192.0.2.10:8080', 'scanner.example:8080') {
@@ -213,11 +204,11 @@ for my $host ('localhost:8080', '127.0.0.1:8080', '192.0.2.10:8080', 'scanner.ex
     $t->post_ok(
         '/scans' => {Host => $host} => form => {
             scan_id => 'b' x 32,
-            target  => $token,
+            target  => "fixture:$token",
         }
     )->status_is(403);
 }
-$t->post_ok('/scans' => form => {scan_id => 'b' x 32, target => $token})->status_is(403);
+$t->post_ok('/scans' => form => {scan_id => 'b' x 32, target => "fixture:$token"})->status_is(403);
 is(job_count(), 0, 'Rejected requests cannot enqueue privileged scan work');
 
 $t->get_ok('/')->status_is(200);
@@ -226,14 +217,14 @@ my $new_id = $t->tx->res->dom->at('input[name="scan_id"]')->attr('value');
 my %form   = (
     csrf_token => $csrf,
     scan_id    => $new_id,
-    target     => $token,
+    target     => "fixture:$token",
     tags       => ['clone-test', '日本語', 'team,blue'],
     new_tag    => 'pending-tag',
     note       => '',
 );
 $t->post_ok('/scans' => form => \%form)->status_is(303);
 is_deeply(
-    $app->pending_scans->[0]{tags},
+    $store->get($new_id)->{tags},
     ['clone-test', '日本語', 'team,blue', 'pending-tag'],
     'Submission preserves separate Unicode tags, literal commas, and the unfinished input'
 );
@@ -303,30 +294,33 @@ $t->post_ok('/scans/' . ('f' x 32) . '/note' => form => {csrf_token => $csrf, no
     ->status_is(404);
 $t->post_ok("/scans/$id/note" => form => {csrf_token => $csrf, note => ''})->status_is(303);
 is($store->get($id)->{note}, '', 'Clearing a note persists rather than restoring its old value');
-is_deeply($store->read_json($dir->child('metadata.json')),
-    $scan, 'Annotation edits never rewrite the original scan record');
-is(job_count(), 1, 'Annotation edits never enqueue or replay disk work');
+is(job_count(),              1,  'Annotation edits never enqueue or replay disk work');
 
 # Target authorization comes from current inventory, never a claimed kind or
 # an old browser form. Verify rejection by the unchanged queue as well as HTTP.
-my $inventory  = $store->read_json("$root/inventory.json");
+my $inventory =
+    Mojo::JSON::from_json($store->db->selectrow_array('SELECT inventory FROM scanners'));
 my $host_token = 'e' x 64;
 $inventory->{host} = {kind => 'host', selectable => 1, token => $host_token};
-$store->atomic_json("$root/inventory.json", $inventory);
-my %host_form = (csrf_token => $csrf, scan_id => App::Outcrop::random_id(), target => $host_token);
+save_inventory($store, $inventory);
+my %host_form = (
+    csrf_token => $csrf,
+    scan_id    => Mogura::Server::random_id(),
+    target     => "fixture:$host_token"
+);
 $t->post_ok('/scans' => form => \%host_form)->status_is(303);
 is(job_count(), 2, 'Live-host scanning uses the same submission contract as clone scanning');
-$host_form{scan_id} = App::Outcrop::random_id();
-$host_form{target}  = $token;
+$host_form{scan_id} = Mogura::Server::random_id();
+$host_form{target}  = "fixture:$token";
 $host_form{kind}    = 'host';
 $t->post_ok('/scans' => form => \%host_form)->status_is(409);
-$host_form{target} = $host_token;
+$host_form{target} = "fixture:$host_token";
 $inventory->{updated_at} = time - 60;
-$store->atomic_json("$root/inventory.json", $inventory);
+save_inventory($store, $inventory);
 $t->post_ok('/scans' => form => \%host_form)->status_is(409);
 $inventory->{updated_at} = time;
-$inventory->{blocked}    = ['/run/outcrop/mounts/fixture'];
-$store->atomic_json("$root/inventory.json", $inventory);
+$inventory->{blocked}    = ['/run/mogura/mounts/fixture'];
+save_inventory($store, $inventory);
 $t->post_ok('/scans' => form => \%host_form)->status_is(409);
 is(job_count(), 2, 'Forged targets, stale inventory, and residual mounts cannot create scan jobs');
 
@@ -348,18 +342,14 @@ my $new_disk  = {
     ],
 };
 push @{$inventory->{disks}}, $new_disk;
-$store->atomic_json("$root/inventory.json", $inventory);
-$queue->add_task(scan => sub { });
-my $running_worker = $queue->worker->register;
-my $running_job    = $running_worker->dequeue(0, {tasks => ['scan']});
-ok($running_job, 'Existing scan is active during hotplug submission');
+save_inventory($store, $inventory);
 $t->get_ok('/inventory')
     ->status_is(200)
     ->header_is('Cache-Control', 'no-store')
-    ->element_exists('input[value="' . $new_token . '"]')
+    ->element_exists('input[value="fixture:' . $new_token . '"]')
     ->element_exists_not('textarea[name="note"]');
-my $async_id   = App::Outcrop::random_id();
-my %async_form = (csrf_token => $csrf, scan_id => $async_id, target => $new_token);
+my $async_id   = Mogura::Server::random_id();
+my %async_form = (csrf_token => $csrf, scan_id => $async_id, target => "fixture:$new_token");
 $t->post_ok('/scans' => {Accept => 'application/json'} => form => \%async_form)
     ->status_is(202)
     ->json_is('/id',  $async_id)
@@ -370,16 +360,14 @@ $t->post_ok('/scans' => {Accept => 'application/json'} => form => \%async_form)
     ->status_is(200)
     ->json_is('/id', $async_id);
 is(job_count(), 3, 'Retrying an asynchronous submission is idempotent');
-$async_form{scan_id} = App::Outcrop::random_id();
+$async_form{scan_id} = Mogura::Server::random_id();
 $t->post_ok('/scans' => {Accept => 'application/json'} => form => \%async_form)->status_is(409);
 is(job_count(), 3, 'A second submission ID cannot duplicate a pending target');
 $inventory->{updated_at} = time - 60;
-$store->atomic_json("$root/inventory.json", $inventory);
+save_inventory($store, $inventory);
 $t->get_ok('/inventory')
     ->status_is(200)
-    ->element_exists('input[value="' . $new_token . '"][disabled]');
-$running_job->finish;
-$running_worker->unregister;
+    ->element_exists('input[value="fixture:' . $new_token . '"][disabled]');
 
 # Render real classification output so neither page loads nor polling hide
 # unsupported layout details or offer BIOS boot partitions for scanning.
@@ -409,23 +397,23 @@ my %layout_nodes = (
     },
 );
 my %layout_parents = ('8:17' => {'8:16' => 1}, '8:18' => {'8:16' => 1});
-my $classifier     = App::Outcrop::Disk->new;
+my $classifier     = Mogura::Scanner::Disk->new;
 my $layout         = $classifier->classify(\%layout_nodes, \%layout_parents, {}, [], 'boot-test');
-$store->atomic_json("$root/inventory.json", $layout);
+save_inventory($store, $layout);
 my ($bios_target, $root_target) = @{$layout->{disks}[0]{targets}};
 for my $route ('/', '/inventory') {
     $t->get_ok($route)
         ->status_is(200)
-        ->element_exists('input[value="' . $bios_target->{token} . '"][disabled]')
-        ->element_exists('input[value="' . $root_target->{token} . '"]:not([disabled])')
+        ->element_exists('input[value="fixture:' . $bios_target->{token} . '"][disabled]')
+        ->element_exists('input[value="fixture:' . $root_target->{token} . '"]:not([disabled])')
         ->content_like(qr/BIOS boot partition（起動用・スキャン対象外）/)
         ->content_like(qr/ファイルシステム: なし \/ 未検出/)
         ->content_unlike(qr/未対応/);
 }
 my %bios_form = (
     csrf_token => $csrf,
-    scan_id    => App::Outcrop::random_id(),
-    target     => $bios_target->{token},
+    scan_id    => Mogura::Server::random_id(),
+    target     => "fixture:$bios_target->{token}",
 );
 $t->post_ok('/scans' => form => \%bios_form)->status_is(409);
 is(job_count(), 3, 'A forged BIOS boot selection cannot enqueue a scan');
@@ -441,7 +429,7 @@ $layout_nodes{'8:19'} = {
 };
 $layout_parents{'8:19'} = {'8:16' => 1};
 $layout = $classifier->classify(\%layout_nodes, \%layout_parents, {}, [], 'boot-test');
-$store->atomic_json("$root/inventory.json", $layout);
+save_inventory($store, $layout);
 
 for my $route ('/', '/inventory') {
     $t->get_ok($route)
@@ -459,7 +447,7 @@ for my $route ('/', '/inventory') {
 for my $table ('sun', '') {
     $layout_nodes{'8:16'}{pttype} = $table;
     $layout = $classifier->classify(\%layout_nodes, \%layout_parents, {}, [], 'boot-test');
-    $store->atomic_json("$root/inventory.json", $layout);
+    save_inventory($store, $layout);
     my $expected = $table || '&lt;empty&gt;';
     $t->get_ok('/inventory')->status_is(200)->content_like(qr/未対応のパーティションテーブル: \Q$expected\E/);
 }

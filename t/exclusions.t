@@ -5,10 +5,10 @@ use File::Temp qw(tempdir);
 use Mojo::File qw(path);
 use Mojo::JSON qw(decode_json);
 use lib 'lib';
-use App::Outcrop::Scan;
-use App::Outcrop::Command;
+use Mogura::Scanner::Scan;
+use Mogura::Scanner::Command;
 
-my $scanner  = App::Outcrop::Scan->new;
+my $scanner  = Mogura::Scanner::Scan->new;
 my @excluded = qw(var/log var/crash var/lib/systemd/coredump);
 my @retained = qw(
     var/lib/dpkg var/lib/rpm usr/lib/sysimage/rpm usr/share/rpm
@@ -157,10 +157,10 @@ for my $release (@releases) {
 # Optional real cataloger verification. It uses only temporary regular files,
 # with no mount, root permission, network download, or installed guest packages.
 subtest 'Real Syft excludes logs while retaining software evidence' => sub {
-    my $syft = $ENV{OUTCROP_TEST_SYFT};
-    plan skip_all => 'Set OUTCROP_TEST_SYFT to an absolute Syft executable' unless $syft;
-    die 'OUTCROP_TEST_SYFT must be an absolute executable' unless $syft =~ m{\A/} && -x $syft;
-    my $command = App::Outcrop::Command->new;
+    my $syft = $ENV{MOGURA_TEST_SYFT};
+    plan skip_all => 'Set MOGURA_TEST_SYFT to an absolute Syft executable' unless $syft;
+    die 'MOGURA_TEST_SYFT must be an absolute executable' unless $syft =~ m{\A/} && -x $syft;
+    my $command = Mogura::Scanner::Command->new;
     my $work    = path(tempdir(CLEANUP => 1));
     $work->child('tools.yaml')->spurt("{}\n");
     for my $release (@releases) {
@@ -174,7 +174,7 @@ subtest 'Real Syft excludes logs while retaining software evidence' => sub {
         my %expected;
         my $index = 0;
         for my $relative (@retained, @excluded) {
-            my $name      = 'outcrop-fixture-' . ++$index;
+            my $name      = 'mogura-fixture-' . ++$index;
             my $directory = $guest->child($relative, $name . '-1.0.0.dist-info')->make_path;
             $directory->child('METADATA')
                 ->spurt("Metadata-Version: 2.1\nName: $name\nVersion: 1.0.0\n");
@@ -184,9 +184,9 @@ subtest 'Real Syft excludes logs while retaining software evidence' => sub {
         # Keep the native Ubuntu package inventory as well as application evidence.
         $guest->child('var/lib/dpkg/status')
             ->spurt(
-            "Package: outcrop-native\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0-1\nDescription: Test fixture\n\n"
+            "Package: mogura-native\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0-1\nDescription: Test fixture\n\n"
             );
-        $expected{'outcrop-native'} = 1;
+        $expected{'mogura-native'} = 1;
         my $output = $work->child('sbom.json');
         $command->run(
             [
