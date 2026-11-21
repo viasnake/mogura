@@ -3,6 +3,7 @@ requires 'perl', '5.034000';
 # Runtime dependencies are locked, including transitive modules, by Carton.
 requires 'Mojolicious', '9.42';
 requires 'IO::Socket::SSL', '2.009';
+requires 'YAML::PP', '0.039';
 requires 'DBI', '1.647';
 requires 'DBD::SQLite', '1.78';
 

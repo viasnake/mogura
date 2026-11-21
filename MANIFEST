@@ -19,6 +19,7 @@ lib/Mogura/Scanner/Config.pm
 lib/Mogura/Scanner/Disk.pm
 lib/Mogura/Scanner/Scan.pm
 lib/Mogura/Scanner/Spool.pm
+lib/Mogura/Scanner/scanner.example.yaml
 lib/Mogura/Server.pm
 lib/Mogura/Server/API.pm
 lib/Mogura/Server/I18N.pm

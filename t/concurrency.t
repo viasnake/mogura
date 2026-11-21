@@ -92,6 +92,15 @@ my $root = path(tempdir(CLEANUP => 1));
 my $store = Mogura::Server::Store->new(state => "" . $root->child('server'))->initialize;
 my $app = Mogura::Server->new(store => $store);
 $app->log->level('fatal');
+$app->routes->any('/api/delayed')->to(
+    cb => sub {
+        my ($c) = @_;
+        my $sha = Digest::SHA::sha256_hex($c->req->body);
+        $c->render_later;
+        my $timer = Mojo::IOLoop->timer(1.5 => sub { $c->render(json => {sha256 => $sha}) });
+        $c->on(finish => sub { Mojo::IOLoop->remove($timer) });
+    }
+);
 my $daemon = Mojo::Server::Daemon->new(
     app => $app,
     listen => ['http://127.0.0.1:0', 'https://127.0.0.1:0'],
@@ -115,15 +124,24 @@ for my $name (qw(east west)) {
     $store->register($name, $token);
     my $file = $state->child('token')->spurt($token);
     chmod 0600, $file;
-    my $client = FaultyClient->new(server => $url, token_file => $file)->initialize;
+    my $cfg = Mogura::Scanner::Config->from_options(
+        {
+            server => $url,
+            'token-file' => "$file",
+            state => "$state",
+            runtime => "$state/run",
+            jobs => 1
+        }
+    );
+    my $client = FaultyClient->new(config => $cfg)->initialize;
+
     if ($name eq 'west') {
-        $client->server($https);
+        $cfg->server($https);
         eval { $client->request('GET', '/identity') };
         like($@, qr/certificate|handshake|verify/i, 'Scanner rejects an untrusted TLS server');
         $client->ua->ca(
             path($INC{'Mojo/IOLoop/TLS.pm'})->sibling('resources', 'server.crt')->to_string);
     }
-    my $cfg = Mogura::Scanner::Config->new(state => "$state", runtime => "$state/run", jobs => 1);
     my $spool = Mogura::Scanner::Spool->new(config => $cfg);
     my $node = Mogura::Scanner->new(
         config => $cfg,
@@ -136,6 +154,24 @@ for my $name (qw(east west)) {
     $nodes{$name} = $node;
 }
 my ($east, $west) = @nodes{qw(east west)};
+subtest 'A deadline applies to a whole file upload' => sub {
+    my $file = $root->child('upload')->spurt('bounded transfer');
+    my $client = $east->client;
+    $client->config->upload_timeout(1);
+    eval { $client->request('PUT', '/delayed', undef, $file) };
+    like($@, qr/request timeout/i, 'Abort before the slow receipt arrives');
+    is(
+        $client->request('GET', '/delayed')->{sha256},
+        Digest::SHA::sha256_hex(''),
+        'A control request can outlast the short upload deadline'
+    );
+    $client->config->upload_timeout(5);
+    is(
+        $client->request('PUT', '/delayed', undef, $file)->{sha256},
+        Digest::SHA::sha256_hex('bounded transfer'),
+        'A longer deadline allows the same file to arrive'
+    );
+};
 my ($a, $b) = map { random_id() } 1 .. 2;
 is($store->submit($a, 'east', 'c' x 64, [], ''), 202, 'East job');
 is($store->submit($b, 'west', 'c' x 64, [], ''), 202, 'West job for same device name');
@@ -269,7 +305,9 @@ is($recovered->{cleanup_status}, 'needs_cleanup', 'Residual mount blocks detach 
 is($west->_recover($crashed, [])->{cleanup_status},
     'unmounted', 'Cleanup confirmed after mount and lock both disappear');
 $west->config->spool_limit(1048576);
-$west->spool->directory($crashed->{id})->child('pending')->spurt('x' x 1048576);
+my $pending = $west->spool->directory($crashed->{id})->child('pending')->open('>');
+truncate $pending, $west->config->spool_limit or die $!;
+close $pending or die $!;
 is($west->_capacity, 0, 'Unsent data at the spool limit prevents new scans');
 
 for my $node ($east, $west) { waitpid($_->{pid}, 0) for values %{$node->active} }

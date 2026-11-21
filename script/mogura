@@ -115,8 +115,10 @@ Usage:
   mogura server [--state DIR] [--listen URL]
   mogura register|issue SCANNER_ID --token-file NEW_FILE [--state DIR]
   mogura revoke SCANNER_ID [--state DIR]
-  mogura scanner --server URL --token-file FILE [--state DIR] [--runtime DIR]
+  mogura scanner [--config FILE] [--server URL] [--token-file FILE] [--state DIR] [--runtime DIR]
                  [--jobs N] [--spool-limit BYTES] [--syft PATH] [--grype PATH]
+                 [--command-timeout SECONDS] [--upload-timeout SECONDS] [--exclude-path PATH]...
+  Scanner options override YAML. Supply server and token_file in either place.
 HELP
 if (grep { $_ eq '--help' } @ARGV) {
     print $help;
@@ -126,20 +128,16 @@ if (@ARGV == 1 && $ARGV[0] eq '--version') { print "Mogura $Mogura::VERSION\n"; 
 my $mode = shift // '';
 my %opts;
 if ($mode eq 'scanner') {
-    GetOptionsFromArray(\@ARGV, \%opts,
-        qw(server=s token-file=s state=s runtime=s jobs=i spool-limit=i syft=s grype=s))
+    GetOptionsFromArray(
+        \@ARGV, \%opts,
+        qw(config=s server=s token-file=s state=s runtime=s jobs=s spool-limit=s syft=s grype=s
+            command-timeout=s upload-timeout=s exclude-path=s@)
+        )
         && !@ARGV
-        && $opts{server}
-        && $opts{'token-file'}
         or die $help;
     require Mogura::Scanner;
-    my $client = Mogura::Scanner::Client->new(
-        server => delete $opts{server},
-        token_file => delete $opts{'token-file'}
-    );
-    $opts{spool_limit} = delete $opts{'spool-limit'} if exists $opts{'spool-limit'};
-    my $scanner =
-        Mogura::Scanner->new(client => $client, config => Mogura::Scanner::Config->new(%opts));
+    my $config = Mogura::Scanner::Config->from_options(\%opts);
+    my $scanner = Mogura::Scanner->new(config => $config);
     $scanner->initialize;
     $scanner->run;
     exit 0;

@@ -82,7 +82,7 @@ use Mogura::Scanner::Scan;
     sub resolve {
         return {kind => 'host', identity => {kind => 'host', partition => {name => '/'}}};
     }
-    sub host_exclusions { return ['./proc', './var/lib/mogura'] }
+    sub host_exclusions { return ['/proc', '/var/lib/mogura'] }
     sub make_readonly { die 'Live root must never change block-device flags' }
     sub mount { die 'Live root must never be mounted' }
     sub verify_mount { die 'Live root is not a guest mount' }
@@ -92,6 +92,7 @@ use Mogura::Scanner::Scan;
     use Mojo::Base -base;
 
     has [qw(failure events arguments)];
+    has timeouts => sub { [] };
 
     sub run {
         my ($self, $arguments, %options) = @_;
@@ -99,6 +100,7 @@ use Mogura::Scanner::Scan;
         kill 'TERM', $$
             if ($self->failure // '') eq 'stop-at-version' && $arguments->[1] eq 'version';
         return Mojo::JSON::encode_json({version => 'test'}) if $arguments->[1] eq 'version';
+        push @{$self->timeouts}, $options{timeout};
         if ($arguments->[0] =~ /syft$/) {
             $self->arguments($arguments);
             push @{$self->events}, 'syft';
@@ -167,7 +169,12 @@ my $sequence = 0;
 sub scan_case {
     my ($failure, $kind) = @_;
     my $directory = tempdir(CLEANUP => 1);
-    my $config = Mogura::Scanner::Config->new(state => $directory, runtime => "$directory/run");
+    my $config = Mogura::Scanner::Config->new(
+        state => $directory,
+        runtime => "$directory/run",
+        exclude_paths => ['/srv/backups'],
+        command_timeout => 79
+    );
     my $store = Mogura::Scanner::Spool->new(config => $config);
     my $events = [];
     my $disk_class = ($kind // '') eq 'host' ? 'HostScanDisk' : 'ScanDisk';
@@ -324,7 +331,8 @@ for my $kind ('clone', 'host') {
         push @sent, $args->[$index + 1] if $args->[$index] eq '--exclude';
     }
     is_deeply(\@sent, $scan->{exclusions}, "$kind persists its actual exclusions");
-    for my $pattern ('./var/log', './var/crash', './var/lib/systemd/coredump') {
+    is_deeply($tools->timeouts, [79, 79], "$kind applies command_timeout to Syft and Grype");
+    for my $pattern ('./srv/backups', './var/log', './var/crash', './var/lib/systemd/coredump') {
         ok(grep($_ eq $pattern, @sent), "$kind excludes $pattern");
     }
 }
@@ -344,7 +352,7 @@ for my $kind ('clone', 'host') {
         'Absolute guest symlink remains inside guest'
     );
     like(
-        join(' ', @{$scanner->inspect_root($root)}),
+        join(' ', @{$scanner->inspect_root($root, [])}),
         qr/Uninspected separate filesystem: \/var/,
         'Split application/data filesystems produce warnings'
     );
@@ -363,7 +371,7 @@ for my $failure ('', 'syft', 'grype', 'stop') {
         'Live scanner receives output exclusion');
     like(
         join(' ', @{$scan->{warnings}}),
-        qr/Uninspected live filesystem path.*\.\/proc/,
+        qr/Uninspected live filesystem path.*\/proc/,
         'Live exclusions also produce uninspected warnings'
     );
 }

@@ -78,7 +78,7 @@ sub guest_path {
 }
 
 sub inspect_root {
-    my ($self, $root) = @_;
+    my ($self, $root, $excluded) = @_;
 
     my @warnings = (
         'Only the selected root filesystem was inspected; separate /boot and EFI areas are excluded.',
@@ -89,9 +89,6 @@ sub inspect_root {
         push @warnings, "Uninspected directory: /$directory is missing or inaccessible."
             unless $available;
     }
-
-    # Distribution metadata is optional; let Syft identify it when available.
-    my $excluded = $self->exclusions($root);
 
     # fstab is evidence about scan scope, never a source of mount commands.
     # Missing scope evidence must not discard software visible on this root.
@@ -123,11 +120,10 @@ sub inspect_root {
         next if $mountpoint eq '/' || $mountpoint eq '/boot' || $mountpoint eq '/boot/efi';
         next if $filesystem eq 'swap';
 
-        # A separate log/crash filesystem is deliberately outside our scope.
         # Resolve components so /var/log/../lib still produces a scope warning.
         my $resolved = eval { '' . $self->guest_path($root, $mountpoint) };
         next if grep {
-            my $directory = '' . path($root, substr($_, 2));
+            my $directory = '' . path($root, substr($_, 1));
             defined($resolved) && ($resolved eq $directory || index($resolved, "$directory/") == 0)
         } @$excluded;
         next if $filesystem =~ /\A(?:
@@ -141,29 +137,36 @@ sub inspect_root {
 }
 
 sub exclusions {
-    my ($self, $root) = @_;
-
-    # These root-relative locations contain logs or crash dumps, not package
-    # inventories. Caches, temporary directories, and application data remain
-    # searchable: they can contain installed or unpacked software.
-    my @patterns;
-    for my $relative ('var/log', 'var/crash', 'var/lib/systemd/coredump') {
+    my ($self, $root, $warnings) = @_;
+    my @paths;
+    my %seen;
+PATH:
+    for my $path (@{$self->config->exclude_paths},
+        qw(/var/log /var/crash /var/lib/systemd/coredump))
+    {
+        next if $seen{$path}++;
         my $directory = path($root);
-        my $has_symlink;
-        for my $component (split m{/}, $relative) {
+        for my $component (split m{/}, substr($path, 1)) {
             $directory = $directory->child($component);
-            if (-l $directory) {
-                $has_symlink = 1;
-                last;
+            unless (lstat $directory) {
+                last if $!{ENOENT} || $!{ENOTDIR};
+                push @$warnings, "Cannot verify exclusion $path at $directory: $!";
+                next PATH;
+            }
+            if (-l _) {
+                push @$warnings, "Skipped exclusion $path: $component is a symbolic link.";
+                next PATH;
             }
         }
-
-        # A redirected log directory may point into an application tree.
-        # Preserve it instead of guessing which paths Syft will traverse.
-        next if $has_symlink;
-        push @patterns, "./$relative";
+        push @paths, $path;
     }
-    return \@patterns;
+    return \@paths;
+}
+
+sub syft_pattern {
+    my ($path) = @_;
+    $path =~ s/([\\*?\[\]{}])/\\$1/g;
+    return ".$path";
 }
 
 sub publish {
@@ -248,20 +251,23 @@ sub run {
         }
         else {
             $target = $self->disk->make_readonly($target);
-            $self->_mount_and_inspect_root($scan, $target, $mountpoint);
+            $self->_mount_root($scan, $target, $mountpoint);
         }
 
-        # Scope inspection tolerates read failures, but must honor a stop signal
-        # even if it arrived inside a best-effort filesystem check.
-        die "Scan interrupted by stop request\n" if $self->{stop_requested};
-        my %excluded = map { $_ => 1 } @{$self->exclusions($scan_root)};
+        my $paths = $self->exclusions($scan_root, $scan->{warnings});
         if ($host_scan) {
-            my $host_exclusions = $self->disk->host_exclusions;
-            $excluded{$_} = 1 for @$host_exclusions;
+            my $host_paths = $self->disk->host_exclusions;
+            push @$paths, @$host_paths;
             push @{$scan->{warnings}},
-                map { "Uninspected live filesystem path (excluded): $_" } @$host_exclusions;
+                map { "Uninspected live filesystem path (excluded): $_" } @$host_paths;
         }
-        $scan->{exclusions} = [sort keys %excluded];
+        else {
+            $self->phase($scan, 'inspecting');
+            push @{$scan->{warnings}}, @{$self->inspect_root($scan_root, $paths)};
+        }
+        die "Scan interrupted by stop request\n" if $self->{stop_requested};
+        my %patterns = map { syft_pattern($_) => 1 } @$paths;
+        $scan->{exclusions} = [sort keys %patterns];
         my ($tool_config, $command_options) = $self->_prepare_tools($scan);
         $self->_generate_sboms($scan, $target, $scan_root, $tool_config, $command_options);
 
@@ -339,7 +345,7 @@ sub _start_scan {
     return $self->store->save($scan);
 }
 
-sub _mount_and_inspect_root {
+sub _mount_root {
     my ($self, $scan, $target, $mountpoint) = @_;
 
     $mountpoint->make_path({mode => 0700});
@@ -353,9 +359,6 @@ sub _mount_and_inspect_root {
     $scan->{cleanup_status} = 'mounted';
     $self->store->save($scan);
     $self->disk->mount($target, $mountpoint);
-
-    $self->phase($scan, 'inspecting');
-    push @{$scan->{warnings}}, @{$self->inspect_root($mountpoint)};
 }
 
 sub _prepare_tools {

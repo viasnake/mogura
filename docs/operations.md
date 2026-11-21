@@ -10,7 +10,7 @@ The default listener is `http://127.0.0.1:8080`. For remote browser access, forw
 ssh -N -L 8080:127.0.0.1:8080 user@server-host
 ```
 
-For remote scanners, terminate HTTPS at a reverse proxy on the server host and proxy `/api/` to loopback. Preserve Authorization, Content-Length and X-Content-SHA256, disable request buffering for uploads, and allow PUT bodies up to 4 GiB. Keep the UI on loopback or require user authentication at the proxy on **every** other path, including downloads and static files. Use a certificate trusted by the scanner host. For colocated processes, use `--server http://127.0.0.1:8080`.
+For remote scanners, terminate HTTPS at a reverse proxy on the server host and proxy `/api/` to loopback. Preserve Authorization, Content-Length and X-Content-SHA256, disable request buffering for uploads, and allow PUT bodies up to 4 GiB. Configure proxy timeouts to allow an entire upload at the slowest expected transfer rate. Keep the UI on loopback or require user authentication at the proxy on **every** other path, including downloads and static files. Use a certificate trusted by the scanner host. For colocated processes, use `--server http://127.0.0.1:8080`.
 
 ## Register a scanner
 
@@ -33,13 +33,32 @@ sudo install -m 0600 -o root -g root ./lab-a.token /etc/mogura/scanner-token
 sudo /usr/bin/cpanm --local-lib-contained /opt/mogura-perl --exclude-vendor ./Mogura-0.01.tar.gz
 ```
 
-Install from a trusted archive. Use the system Perl and a dedicated root-owned prefix whose ancestors, modules, native libraries and executables deny group and other writes. Keep the prefix free of symlinks. Install the tools below, then run the foreground scanner.
+Install from a trusted archive. Use the system Perl and a dedicated root-owned prefix whose ancestors, modules, native libraries and executables deny group and other writes. Keep the prefix free of symlinks. Install the tools below, then copy and edit the bundled example. With this prefix, it is installed alongside the scanner modules.
 
 ```sh
-sudo /opt/mogura-perl/bin/mogura scanner --server https://mogura.example.com --token-file /etc/mogura/scanner-token
+sudo install -o root -g root -m 0644 /opt/mogura-perl/lib/perl5/Mogura/Scanner/scanner.example.yaml /etc/mogura/scanner.yaml
+sudoedit /etc/mogura/scanner.yaml
+sudo /opt/mogura-perl/bin/mogura scanner --config /etc/mogura/scanner.yaml
 ```
 
-Scanner state defaults to `/var/lib/mogura-scanner`. Each attached disk is mounted at `/run/mogura-scanner/mounts/<scan_id>`. Use `--state` and `--runtime` to change the state and runtime directories. Both must be private and root-owned. Keep these paths, the scanner identity and the server address associated across restarts. Set `--syft` and `--grype` to trusted absolute executable paths when needed.
+Set the server URL and review or remove the two example exclusions before starting. The scanner reads the named YAML file once at startup. Use an absolute path without symlinks in a root-owned directory. The file accepts one YAML mapping of up to 64 KiB. The file and its parent directories must deny group and other writes. Keep the token in its own root-owned file with mode 0600.
+
+CLI options override YAML, which overrides the defaults. You can also start the scanner with only `--server URL --token-file FILE`. Repeated `--exclude-path PATH` options replace the entire YAML list.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `server` | Required | HTTPS origin, or HTTP on numeric loopback |
+| `token_file` | Required | Absolute path to the scanner token |
+| `state` | `/var/lib/mogura-scanner` | Private spool, locks and Grype data |
+| `runtime` | `/run/mogura-scanner` | Private runtime directory containing the mountpoints |
+| `syft`, `grype` | `/usr/local/bin/syft`, `/usr/local/bin/grype` | Trusted executable paths |
+| `jobs` | 2 | Concurrent scans, from 1 to 64 |
+| `spool_limit` | 8589934592 | Spool budget in bytes, from 1048576 to 9999999999999 |
+| `command_timeout` | 3600 | Seconds per Syft or Grype analysis command |
+| `upload_timeout` | 300 | Seconds for the whole HTTP request for one file |
+| `exclude_paths` | `[]` | Additional literal paths relative to the scanned root |
+
+Keep state and runtime private and root-owned. Preserve the state directory, scanner identity and server address across restarts. Uploads also have a 10-second connect timeout and a 30-second inactivity timeout. Control requests have a 15-second total timeout.
 
 ## Syft and Grype
 
@@ -66,7 +85,7 @@ On Ubuntu amd64, install both tools in `/usr/local/bin` before starting the scan
 
 ## Capacity and recovery
 
-The default is two concurrent scans and an 8 GiB spool budget. Use `--jobs N` (1–64) and `--spool-limit BYTES` to change them. The scanner divides available space between output files and scan slots. Allow extra space for each slot's Grype database. A tool that reaches its per-file limit fails the scan. Provision the server separately for retained artifacts, incoming uploads and search indexes.
+The scanner divides available space between output files and scan slots. Allow extra space for each slot's Grype database. A tool that reaches its per-file limit fails the scan. Provision the server separately for retained artifacts, incoming uploads and search indexes.
 
 Select **Cancel scan** on the scan page to remove a queued job or stop a running scan. An offline scanner receives the request when it reconnects. Check the mount status before disconnecting a disk.
 
@@ -76,4 +95,4 @@ When the UI reports cleanup is required, inspect the scanner's mount namespace w
 
 ## Scan coverage
 
-Mogura inspects the selected root filesystem. It excludes separate mounts and the root-relative log, crash, and coredump directories. Read warnings about uninspected paths even when a scan completes. Reading the live host does not create a point-in-time snapshot.
+Mogura inspects the selected root filesystem. Standard exclusions are `/var/log`, `/var/crash` and `/var/lib/systemd/coredump`. A path such as `/srv/backups` excludes that directory and its contents on each host or attached root. Use literal absolute paths within the target. Software in an excluded directory will be missing from both the SBOM and vulnerability results. If the path or an ancestor is a symlink, the scanner skips the exclusion and records a warning. The scan metadata lists the patterns passed to Syft. Live scans also exclude other mounts, virtual filesystems and the scanner's state and runtime directories. Read warnings about uninspected paths even when a scan completes. Reading the live host does not create a point-in-time snapshot.

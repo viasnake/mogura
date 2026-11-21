@@ -8,6 +8,6 @@ cpanm ./Mogura-0.01.tar.gz
 mogura server
 ```
 
-After publication, install with `cpanm Mogura`. Open [the web interface](http://127.0.0.1:8080), [connect a scanner](docs/operations.md), and select a disk under its scanner name. Open History to search results, edit tags and notes, or download the original files.
+After publication, install with `cpanm Mogura`. Open [the web interface](http://127.0.0.1:8080), [configure and start a scanner](docs/operations.md#install-and-start-the-scanner), and select a disk under its scanner name. Open History to search results, edit tags and notes, or download the original files.
 
 [Build and test](CONTRIBUTING.md) · [Apache-2.0](LICENSE)

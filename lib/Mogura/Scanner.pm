@@ -7,14 +7,14 @@ use Time::HiRes qw(time sleep);
 use Mojo::File qw(path);
 use Mojo::JSON qw(decode_json);
 use Mogura::Protocol qw(random_id valid_id now);
-use Mogura::Scanner::Config;
+use Mogura::Scanner::Config qw(trusted_path);
 use Mogura::Scanner::Spool;
 use Mogura::Scanner::Disk;
 use Mogura::Scanner::Scan;
 use Mogura::Scanner::Client;
 
 has config => sub { Mogura::Scanner::Config->new };
-has 'client';
+has client => sub { Mogura::Scanner::Client->new(config => shift->config) };
 has disk => sub { Mogura::Scanner::Disk->new(config => shift->config, app_root => abs_path($0)) };
 has spool => sub { Mogura::Scanner::Spool->new(config => shift->config) };
 has scan => sub {
@@ -23,31 +23,12 @@ has scan => sub {
 };
 has active => sub { {} };
 
-sub trusted_path {
-    my ($file) = @_;
-    die "Expected absolute path: $file"
-        unless "$file" =~ m{\A/} && "$file" !~ m{(?:\A|/)\.\.(?:/|\z)};
-    for my $candidate ("$file", abs_path($file) // die "Missing path: $file") {
-        my $p = path($candidate);
-        while (1) {
-            my @st = stat($p);
-            die "Root must own $p and deny group/other writes"
-                unless @st && $st[4] == 0 && !($st[2] & 0022);
-            last if "$p" eq '/';
-            $p = $p->dirname;
-        }
-    }
-}
-
 sub initialize {
     my ($self) = @_;
     my $config = $self->config;
     die 'Scanner requires root' if $>;
     umask 0077;
     chdir '/' or die "chdir: $!";
-    die 'jobs must be 1..64' unless $config->jobs =~ /\A[1-9]\d?\z/ && $config->jobs <= 64;
-    die 'Invalid spool limit'
-        unless $config->spool_limit =~ /\A[1-9]\d{0,12}\z/ && $config->spool_limit >= 1024**2;
     for my $tool ($config->syft, $config->grype,
         qw(/usr/bin/lsblk /usr/bin/findmnt /usr/bin/mount /usr/bin/umount /usr/sbin/blockdev /usr/bin/df /usr/bin/prlimit)
         )
@@ -64,7 +45,7 @@ sub initialize {
         trusted_path($p);
         die "Private directory required: $p" if (stat($p))[2] & 0077;
     }
-    trusted_path($self->client->token_file);
+    trusted_path($config->token_file);
     $self->client->initialize;
     $self->acquire_lock;
     for my $dir (path($config->state, 'spool')->list({dir => 1})->each) {

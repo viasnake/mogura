@@ -26,6 +26,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Mojolicious' => '9.42',
         'IO::Socket::SSL' => '2.009',
+        'YAML::PP' => '0.039',
         'DBI' => '1.647',
         'DBD::SQLite' => '1.78',
         'Cpanel::JSON::XS' => '4.20',

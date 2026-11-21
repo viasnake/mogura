@@ -121,12 +121,7 @@ sub host_exclusions {
         map { $_->{target} } @{$self->mount_table},
     );
     delete $paths{'/'};
-    my @patterns;
-    for my $directory (sort keys %paths) {
-        $directory =~ s/([\\*?\[\]{}])/\\$1/g;
-        push @patterns, ".$directory";
-    }
-    return \@patterns;
+    return [sort keys %paths];
 }
 
 sub _read_block_devices {

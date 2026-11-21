@@ -417,13 +417,13 @@ is($live_disk->resolve($live->{token})->{kind},
 is($live->{identity}{partition}{name}, '/', 'Live target is fixed to the running root');
 my $exclusions = $live_disk->host_exclusions;
 ok(
-    grep($_ eq './var/lib/mogura-scanner', @$exclusions),
+    grep($_ eq '/var/lib/mogura-scanner', @$exclusions),
     'Live scan excludes its own generated results'
 );
-ok(grep($_ eq './mnt/other', @$exclusions), 'Live scan excludes other mounts');
-ok(!grep($_ eq '.' || $_ eq './', @$exclusions), 'Live scan never excludes its root');
+ok(grep($_ eq '/mnt/other', @$exclusions), 'Live scan excludes other mounts');
+ok(!grep($_ eq '.' || $_ eq '/', @$exclusions), 'Live scan never excludes its root');
 
-for my $keep ('./tmp', '**/.cache', '**/.git', '**/.rustup/tmp') {
+for my $keep ('/tmp', '**/.cache', '**/.git', '**/.rustup/tmp') {
     ok(!grep($_ eq $keep, @$exclusions), "$keep is not discarded by live scan policy");
 }
 $live_disk->root_number('253:1');
