@@ -19,6 +19,12 @@
         <strong><%= label($scan->{cleanup_status}) %></strong>
     </div>
 </section>
+% if ($scan->{status} eq 'queued' || $scan->{status} eq 'running') {
+<form class="mt-3" method="post" action="/scans/<%= $scan->{id} %>/cancel">
+    %= csrf_field
+    <button class="inline-flex min-h-10 items-center justify-center rounded-md border border-red-700 bg-white px-4 py-2 font-medium text-red-700 cursor-pointer hover:bg-red-50" type="submit"><%= l('cancel_scan') %></button>
+</form>
+% }
 % if (($scan->{status}//'') eq 'transferring') {
 <p><%= l('artifacts_received', count => scalar grep { $artifacts->{$_} } qw(syft cdx grype)) %></p>
 % }
@@ -29,7 +35,7 @@
     <%= l('inspect_mounts') %>
 </aside>
 % }
-% if ($scan->{error}) {
+% if ($scan->{error} && $scan->{status} ne 'cancelled') {
 <aside class="my-5 rounded-md border border-red-200 bg-red-50 p-4 text-red-900 wrap-anywhere">
     <strong><%= l('phase_failed', phase => label($scan->{failed_phase})) %></strong>
     <details>

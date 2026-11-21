@@ -68,6 +68,8 @@ On Ubuntu amd64, install both tools in `/usr/local/bin` before starting the scan
 
 The default is two concurrent scans and an 8 GiB spool budget. Use `--jobs N` (1–64) and `--spool-limit BYTES` to change them. The scanner divides available space between output files and scan slots. Allow extra space for each slot's Grype database. A tool that reaches its per-file limit fails the scan. Provision the server separately for retained artifacts, incoming uploads and search indexes.
 
+Select **Cancel scan** on the scan page to remove a queued job or stop a running scan. An offline scanner receives the request when it reconnects. Check the mount status before disconnecting a disk.
+
 Stop either process with SIGTERM or Ctrl-C. Keep the scanner spool during an outage. A restart reconciles started jobs against local locks and mountinfo. Unconfirmed deliveries retry after reconnection. If a scan is interrupted, inspect its status before submitting another job.
 
 When the UI reports cleanup is required, inspect the scanner's mount namespace with `findmnt` and check for surviving scanner processes. Verify the disk and the mount source before performing a normal unmount of a confirmed residual mount. Keep the disk attached while its state is unknown. An offline scanner's last reported mount state is historical.

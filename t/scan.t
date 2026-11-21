@@ -96,6 +96,8 @@ use Mogura::Scanner::Scan;
     sub run {
         my ($self, $arguments, %options) = @_;
 
+        kill 'TERM', $$
+            if ($self->failure // '') eq 'stop-at-version' && $arguments->[1] eq 'version';
         return Mojo::JSON::encode_json({version => 'test'}) if $arguments->[1] eq 'version';
         if ($arguments->[0] =~ /syft$/) {
             $self->arguments($arguments);
@@ -277,6 +279,13 @@ for my $scope ('separate-filesystems', 'missing-scope') {
     my ($scan, $store, $events) = scan_case('stop');
     is($scan->{status},         'interrupted', 'Normal stop interrupts the scan');
     is($scan->{cleanup_status}, 'unmounted',   'Normal stop cleans up');
+}
+
+{
+    my ($scan, undef, $events) = scan_case('stop-at-version');
+    is_deeply($events, [qw(mount unmount)],
+        'Cancellation during version lookup skips scanning and unmounts the disk');
+    is($scan->{status}, 'interrupted', 'Cancellation survives best-effort version lookup');
 }
 
 # A stop signal caught by a best-effort scope check must still stop the scan.

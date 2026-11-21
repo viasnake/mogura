@@ -215,11 +215,12 @@ sub run {
     my $scan       = $self->_start_scan($request);
     my $mountpoint = path($self->config->mounts, $scan->{id});
     my $scan_root  = $mountpoint;
-    my ($target, $error, $failed_phase, $interrupted);
+    my ($target, $error, $failed_phase);
+    local $self->{stop_requested} = 0;
     my ($host_scan, $disk_lock);
 
     local $SIG{TERM} = local $SIG{INT} = local $SIG{HUP} = sub {
-        $interrupted = 1;
+        $self->{stop_requested} = 1;
         die "Scan interrupted by stop request\n";
     };
 
@@ -252,7 +253,7 @@ sub run {
 
         # Scope inspection tolerates read failures, but must honor a stop signal
         # even if it arrived inside a best-effort filesystem check.
-        die "Scan interrupted by stop request\n" if $interrupted;
+        die "Scan interrupted by stop request\n" if $self->{stop_requested};
         my %excluded = map { $_ => 1 } @{$self->exclusions($scan_root)};
         if ($host_scan) {
             my $host_exclusions = $self->disk->host_exclusions;
@@ -268,6 +269,7 @@ sub run {
         # downloads and matching, and never continue after an unmount failure.
         die 'Unmount failed; vulnerability matching was not started'
             unless $host_scan || $self->cleanup($scan, $target, $mountpoint);
+        die "Scan interrupted by stop request\n" if $self->{stop_requested};
         $self->_match_vulnerabilities($scan, $tool_config, $command_options);
         $scan->{status} = 'completed';
         1;
@@ -279,8 +281,8 @@ sub run {
 
     # Repeated stop requests must not interrupt the bounded unmount attempt.
     local $SIG{TERM} = local $SIG{INT} = local $SIG{HUP} = 'IGNORE';
-    $self->_cleanup_after_scan($scan, $target, $mountpoint)            if $target && !$host_scan;
-    $self->_record_failure($scan, $error, $failed_phase, $interrupted) if $error;
+    $self->_cleanup_after_scan($scan, $target, $mountpoint) if $target && !$host_scan;
+    $self->_record_failure($scan, $error, $failed_phase, $self->{stop_requested}) if $error;
 
     if ($scan->{status} eq 'completed' && !$host_scan && $scan->{cleanup_status} ne 'unmounted') {
         $scan->{status} = 'partial';
@@ -392,6 +394,7 @@ sub _record_tool_versions {
                 %$options, timeout => 30,);
             decode_json($json);
         };
+        die "Scan interrupted by stop request\n"         if $self->{stop_requested};
         $scan->{"${tool}_version"} = $version->{version} if ref $version eq 'HASH';
     }
 }

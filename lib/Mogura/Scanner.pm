@@ -154,6 +154,30 @@ sub _transfer {
     $retired->remove_tree;
 }
 
+sub _retire_unstarted {
+    my ($self, $intent, $cancel) = @_;
+    my $id = $intent->{id};
+    if ($cancel) {
+
+        # A lost claim reply may be retried after cancellation, before any
+        # local work started. Acknowledge before retiring the saved intent.
+        $self->client->request(
+            'POST',
+            "/jobs/$id/$intent->{run}/complete",
+            {
+                status         => 'cancelled',
+                phase          => 'finished',
+                finished_at    => now(),
+                cleanup_status => 'not_needed',
+                sequence       => 1
+            }
+        );
+    }
+    my $dir = $self->spool->directory($id);
+    unlink $dir->child('intent.json') or die "Discard unstarted claim: $!";
+    rmdir $dir                        or die "Remove empty claim directory: $!";
+}
+
 sub _fork_job {
     my ($self, $id, $work, $slot) = @_;
     my $pid = fork;
@@ -227,7 +251,7 @@ sub tick {
     my %owned =
         map { ($self->config->mounts . "/$_") => 1 } grep { $active->{$_}{slot} } keys %$active;
     my @blocked = grep { !$owned{$_} } @$mounts;
-    my @pending;
+    my %pending;
     my $sending = grep { !$_->{slot} } values %$active;
     for my $dir ($self->_records) {
         my $id   = $dir->basename;
@@ -238,7 +262,7 @@ sub tick {
             unless $intent->{id} eq $id && valid_id($intent->{run});
         die 'Restore the runtime directory recorded for the outstanding scan'
             unless $intent->{runtime} eq $self->config->runtime;
-        if (!$intent->{started}) { push @pending, $intent; next }
+        if (!$intent->{started}) { $pending{$id} = $intent; next }
         if (my $child = $active->{$id}) {
             my $scan = $self->spool->get($id);
             push @blocked, $id if $scan && $scan->{cleanup_status} eq 'needs_cleanup';
@@ -271,15 +295,30 @@ sub tick {
         my $inventory = eval { $self->disk->inventory }
             // {disks => [], errors => ["Disk discovery failed: $@"]};
         $inventory->{blocked} = \@blocked;
-        $self->client->request('POST', '/inventory', $inventory);
+        my $reply = $self->client->request('POST', '/inventory', $inventory);
+        for my $request (@{$reply->{cancel} // []}) {
+            my $id = $request->{id};
+            if (my $intent = $pending{$id}) {
+                next unless $intent->{run} eq $request->{run};
+                $self->_retire_unstarted($intent, 1);
+                delete $pending{$id};
+                next;
+            }
+            my $child = $active->{$id} or next;
+            next unless $child->{slot} && $child->{run} eq $request->{run};
+            next if $child->{stop_sent};
+
+            # This direct child cannot have its PID reused before we reap it.
+            $child->{stop_sent} = kill 'TERM', $child->{pid};
+        }
         $self->{inventory_due} = time + $self->config->inventory_interval;
     }
     return if @blocked;
     my %slots = map { $_->{slot} => 1 } values %$active;
     my ($slot) = grep { !$slots{$_} } 1 .. $self->config->jobs;
     return unless $slot;
-    my $limit  = $self->_capacity or return;
-    my $intent = shift @pending;
+    my $limit = $self->_capacity or return;
+    my ($intent) = values %pending;
     unless ($intent) {
         my $job = $self->client->request('GET', '/jobs')->{job} or return;
         $intent = {
@@ -295,12 +334,8 @@ sub tick {
     }
     my $id    = $intent->{id};
     my $claim = $self->client->request('POST', "/jobs/$id/$intent->{run}/claim", {});
-    if ($claim->{expired}) {
-        my $dir = $self->spool->directory($id);
-        unlink $dir->child('intent.json') or die "Discard expired claim: $!";
-        rmdir $dir                        or die "Remove empty claim directory: $!";
-        return;
-    }
+    return $self->_retire_unstarted($intent, $claim->{cancel})
+        if $claim->{expired} || $claim->{cancel};
     return if $self->{stopping};
     $intent->{started} = 1;
     $self->spool->write_record($self->spool->directory($id)->child('intent.json'), $intent);
@@ -314,6 +349,7 @@ sub tick {
         $slot
     );
     $active->{$id}{limit} = $limit;
+    $active->{$id}{run}   = $intent->{run};
 }
 
 sub run {

@@ -103,7 +103,8 @@ sub register {
             return $c->render(status => 400, json => {}) unless _valid_inventory($inv);
             $store->db->do('UPDATE scanners SET seen=?,inventory=? WHERE id=?',
                 undef, time, to_json($inv), $c->stash('scanner'));
-            return $c->render(json => {});
+            return $c->render(
+                json => {cancel => $store->pending_cancellations($c->stash('scanner'))});
         }
     );
     $api->get('/jobs')->to(
@@ -126,7 +127,11 @@ sub register {
             my $ok = $store->claim(map { $c->stash($_) } qw(scanner id run));
             $c->render(
                 status => ($ok // '') eq 'expired' ? 410 : $ok ? 200 : 409,
-                json   => {id => $c->stash('id'), run => $c->stash('run')}
+                json   => {
+                    id     => $c->stash('id'),
+                    run    => $c->stash('run'),
+                    cancel => ($ok // '') eq 'cancel' ? 1 : 0
+                }
             );
         }
     );

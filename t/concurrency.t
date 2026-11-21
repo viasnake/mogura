@@ -219,6 +219,43 @@ for my $pair (['east', $a], ['west', $b]) {
     is($root->child($pair->[0], 'starts')->slurp,
         "$pair->[1]\n", 'Exactly one start on assigned scanner');
 }
+subtest 'Browser cancellation stops only its assigned run' => sub {
+    my $web = Mojo::UserAgent->new;
+    my $id  = random_id();
+    is($store->submit($id, 'west', 'c' x 64, [], ''), 202, 'Submit scan');
+    my $endpoint = "$url/scans/$id/cancel";
+    my $form     = $web->get("$url/scans/$id")->result->dom->at('form[action$="/cancel"]');
+    my $csrf     = $form->at('input[name="csrf_token"]')->attr('value');
+    is($web->post($endpoint)->result->code, 403, 'Missing CSRF token cannot stop work');
+    is($web->post($endpoint => form => {csrf_token => $csrf})->result->code,
+        303, 'Cancel from detail page');
+    ok(!$store->offer('west'), 'Cancelled queued scan cannot be claimed');
+    is($store->get($id)->{status}, 'cancelled', 'Unstarted scan cancelled immediately');
+
+    $id = random_id();
+    $store->submit($id, 'west', 'c' x 64, [], '');
+    $west->config->inventory_interval(0);
+    $west->{inventory_due} = 0;
+    ok(until_true(sub { $west->tick; return $west->spool->get($id) }), 'Assigned scan started');
+    $endpoint = "$url/scans/$id/cancel";
+    $web->post($endpoint => form => {csrf_token => $csrf});
+    is($store->get($id)->{status}, 'cancelling', 'Request is pending until scanner confirms');
+    is_deeply($east->client->request('POST', '/inventory', $east->disk->inventory)->{cancel},
+        [], 'Other scanner receives no stop request');
+    ok(until_true(sub { $west->tick; return $store->get($id)->{status} eq 'cancelled' }),
+        'Scanner stops the child and delivers the final outcome');
+    is($store->get($a)->{status}, 'completed', 'Other scanner result preserved');
+
+    $id = random_id();
+    $store->submit($id, 'east', 'c' x 64, [], '');
+    $east->client->lose_claim(1);
+    eval { $east->tick };
+    like($@, qr/response lost/, 'Claim accepted before the connection failed');
+    $web->post("$url/scans/$id/cancel" => form => {csrf_token => $csrf});
+    $east->tick;
+    is($store->get($id)->{status}, 'cancelled', 'Retry confirms cancellation before starting');
+    unlike($root->child('east/starts')->slurp, qr/\Q$id\E/, 'Cancelled claim never ran');
+};
 my $crashed   = {id => random_id(), token => 'c' x 64};
 my $mount     = $west->config->mounts . "/$crashed->{id}";
 my $recovered = $west->_recover($crashed, [$mount]);

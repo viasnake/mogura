@@ -136,6 +136,41 @@ sub submit {
     );
 }
 
+sub cancel {
+    my ($self, $id) = @_;
+    return $self->transaction(
+        sub {
+            my ($db)   = @_;
+            my $scan   = $self->get($id) or return;
+            my $status = $scan->{status};
+            if ($status eq 'queued') {
+                $db->do(
+                    q{UPDATE jobs SET finished=1, record=json_set(record,
+                '$.status','cancelled','$.phase','finished','$.finished_at',?,
+                '$.cleanup_status','not_needed') WHERE id=?}, undef, now(), $id
+                );
+            }
+            elsif ($status eq 'running') {
+                $db->do(
+                    q{UPDATE jobs SET record=json_set(record,'$.status','cancelling') WHERE id=?},
+                    undef, $id);
+            }
+
+            # A repeated click or a completion racing the form keeps the last result.
+            return 1;
+        }
+    );
+}
+
+sub pending_cancellations {
+    my ($self, $scanner) = @_;
+    return $self->db->selectall_arrayref(
+        q{SELECT id,run FROM jobs WHERE scanner=?
+        AND finished=0 AND json_extract(record,'$.status')='cancelling' AND run IS NOT NULL},
+        {Slice => {}}, $scanner
+    );
+}
+
 sub offer {
     my ($self, $scanner) = @_;
     return $self->db->selectrow_hashref(
@@ -150,11 +185,15 @@ sub claim {
         sub {
             my ($db) = @_;
             my $row = $db->selectrow_hashref(
-                'SELECT run,token,finished FROM jobs WHERE scanner=? AND id=?',
-                undef, $scanner, $id)
-                or return;
-            return $row->{run} eq $run if defined $row->{run};
-            return 'expired'           if $row->{finished};
+                q{SELECT run,token,finished,json_extract(record,'$.status') AS status FROM jobs WHERE scanner=? AND id=?},
+                undef, $scanner, $id
+            ) or return;
+            if (defined $row->{run}) {
+                return unless $row->{run} eq $run;
+                return 'cancel' if $row->{status} eq 'cancelling' || $row->{status} eq 'cancelled';
+                return 1;
+            }
+            return 'expired' if $row->{finished};
             unless ($self->selectable($scanner, $row->{token})) {
                 $db->do(
                     q{UPDATE jobs SET finished=1,record=json_set(record,'$.status','failed','$.phase','finished','$.error','Target no longer available','$.cleanup_status','not_needed') WHERE id=?},
@@ -319,13 +358,24 @@ sub update_run {
                   $final                               ? $data->{status}
                 : ($data->{phase} // '') eq 'finished' ? 'transferring'
                 :                                        'running';
-            $record->{outcome}        = $data->{status} if ($data->{phase} // '') eq 'finished';
+
+            if ($old->{status} eq 'cancelling') {
+                if (!$final) {
+                    $record->{status} = 'cancelling';
+                }
+                elsif ($record->{status} eq 'interrupted') {
+                    $record->{status} = 'cancelled';
+                }
+            }
+            $record->{outcome} = $final ? $record->{status} : $data->{status}
+                if ($data->{phase} // '') eq 'finished';
             $record->{cleanup_status} = $cleanup;
 
             if ($final) {
                 return
                     unless ($record->{status} // '') =~
-                    /\A(?:completed|partial|failed|interrupted)\z/;
+                    /\A(?:completed|partial|failed|interrupted|cancelled)\z/;
+                return if $record->{status} eq 'cancelled' && $old->{status} ne 'cancelling';
                 if ($record->{status} eq 'completed') {
                     return
                         unless $cleanup eq

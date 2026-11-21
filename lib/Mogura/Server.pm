@@ -54,6 +54,17 @@ sub startup {
     );
     $routes->get('/history')->to(cb => sub { $self->_show_history(@_) });
     $routes->post('/scans')->to(cb => sub { $self->_start_scan(@_) });
+    $routes->post('/scans/:id/cancel')->to(
+        cb => sub {
+            my ($c) = @_;
+            return $c->render(status => 403, text => $c->l('invalid_csrf'))
+                if $c->validation->csrf_protect->has_error('csrf_token');
+            my $id = $c->stash('id');
+            return $c->reply->not_found unless $self->store->cancel($id);
+            $c->res->code(303);
+            return $c->redirect_to("/scans/$id");
+        }
+    );
     $routes->get('/scans/:id')->to(cb => sub { $self->_show_scan(@_) });
     $routes->post('/scans/:id/tags')->to(cb => sub { $self->_update_tags(@_) });
     $routes->post('/scans/:id/note')->to(cb => sub { $self->_update_note(@_) });
