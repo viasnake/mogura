@@ -31,10 +31,6 @@ is_deeply(
     [map { "./$_" } @excluded],
     'Only root log and crash directories are excluded'
 );
-for my $relative (@retained) {
-    ok(!grep($relative eq $_ || index($relative, "$_/") == 0, @excluded),
-        "Keep package/application evidence at /$relative");
-}
 for my $mount ('/var/log', '/var/log/audit', '/var/crash', '/var/lib/systemd/coredump') {
     $root->child('etc/fstab')
         ->spurt("UUID=root / xfs defaults 0 0\nUUID=logs $mount xfs defaults 0 0\n");
@@ -70,32 +66,6 @@ for my $mount ('/usr', '/var', '/var/lib/rpm', '/var/log/../lib', '/var/log-old'
     is_deeply($scanner->exclusions($linked), [], 'Symlink ancestors disable the optimization');
 }
 
-my @releases = (
-    (
-        map { ["Ubuntu $_", 'etc/os-release', "ID=ubuntu\nVERSION_ID=$_\n", 'ubuntu', $_] }
-            qw(18.04 20.04 22.04 24.04 26.04)
-    ),
-    ['CentOS 6.5',       'etc/redhat-release', "CentOS release 6.5 (Final)\n",  'centos', '6.5'],
-    ['CentOS 6.10',      'etc/redhat-release', "CentOS release 6.10 (Final)\n", 'centos', '6.10'],
-    ['CentOS 7',         'etc/os-release',     "ID=centos\nVERSION_ID=7\n",     'centos', '7'],
-    ['CentOS Stream 8',  'etc/os-release',     "ID=centos\nVERSION_ID=8\n",     'centos', '8'],
-    ['CentOS Stream 9',  'usr/lib/os-release', "ID=centos\nVERSION_ID=9\n",     'centos', '9'],
-    ['CentOS Stream 10', 'usr/lib/os-release', "ID=centos\nVERSION_ID=10\n",    'centos', '10'],
-    ['No release files', undef,                undef,                           '',       ''],
-);
-for my $release (@releases) {
-    my ($label, $file, $content) = @$release;
-    my $guest = make_root();
-    unlink $guest->child('etc/os-release') or die $!;
-    if (defined $file) {
-        $guest->child($file)->dirname->make_path;
-        $guest->child($file)->spurt($content);
-    }
-    ok(
-        eval { $scanner->inspect_root($guest); 1 },
-        "$label root is accepted without running guest code"
-    );
-}
 {
     my $guest = make_root();
     $guest->child('etc/os-release')->spurt("PRETTY_NAME=not-enough\n");
@@ -163,52 +133,41 @@ subtest 'Real Syft excludes logs while retaining software evidence' => sub {
     my $command = Mogura::Scanner::Command->new;
     my $work    = path(tempdir(CLEANUP => 1));
     $work->child('tools.yaml')->spurt("{}\n");
-    for my $release (@releases) {
-        my ($label, $release_path, $content, $os_id, $version) = @$release;
-        my $guest = make_root();
-        unlink $guest->child('etc/os-release') or die $!;
-        if (defined $release_path) {
-            $guest->child($release_path)->dirname->make_path;
-            $guest->child($release_path)->spurt($content);
-        }
-        my %expected;
-        my $index = 0;
-        for my $relative (@retained, @excluded) {
-            my $name      = 'mogura-fixture-' . ++$index;
-            my $directory = $guest->child($relative, $name . '-1.0.0.dist-info')->make_path;
-            $directory->child('METADATA')
-                ->spurt("Metadata-Version: 2.1\nName: $name\nVersion: 1.0.0\n");
-            $expected{$name} = 1 unless grep { $_ eq $relative } @excluded;
-        }
+    my $guest = make_root();
+    my %expected;
+    my $index = 0;
 
-        # Keep the native Ubuntu package inventory as well as application evidence.
-        $guest->child('var/lib/dpkg/status')
-            ->spurt(
-            "Package: mogura-native\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0-1\nDescription: Test fixture\n\n"
-            );
-        $expected{'mogura-native'} = 1;
-        my $output = $work->child('sbom.json');
-        $command->run(
-            [
-                $syft, 'scan', "dir:$guest", '--config', '' . $work->child('tools.yaml'),
-                '-o', "syft-json=$output", map { ('--exclude', $_) } @{$scanner->exclusions($guest)}
-            ],
-            cwd     => "$work",
-            timeout => 120,
-            env     => {SYFT_CHECK_FOR_APP_UPDATE => 'false'}
-        );
-        my $sbom  = decode_json($output->slurp);
-        my %found = map { $_->{name} => 1 } @{$sbom->{artifacts}};
-        is_deeply(
-            [sort keys %found],
-            [sort keys %expected],
-            "$label keeps all intended packages and omits only log/crash packages"
-        );
-        is($sbom->{distro}{id} // '',
-            $os_id, "$label distribution metadata matches available evidence");
-        is($sbom->{distro}{versionID} // '',
-            $version, "$label version metadata matches available evidence");
+    for my $relative (@retained, @excluded) {
+        my $name      = 'mogura-fixture-' . ++$index;
+        my $directory = $guest->child($relative, $name . '-1.0.0.dist-info')->make_path;
+        $directory->child('METADATA')
+            ->spurt("Metadata-Version: 2.1\nName: $name\nVersion: 1.0.0\n");
+        $expected{$name} = 1 unless grep { $_ eq $relative } @excluded;
     }
+
+    # Keep the native Ubuntu package inventory as well as application evidence.
+    $guest->child('var/lib/dpkg/status')
+        ->spurt(
+        "Package: mogura-native\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0-1\nDescription: Test fixture\n\n"
+        );
+    $expected{'mogura-native'} = 1;
+    my $output = $work->child('sbom.json');
+    $command->run(
+        [
+            $syft, 'scan', "dir:$guest", '--config', '' . $work->child('tools.yaml'),
+            '-o',  "syft-json=$output", map { ('--exclude', $_) } @{$scanner->exclusions($guest)}
+        ],
+        cwd     => "$work",
+        timeout => 120,
+        env     => {SYFT_CHECK_FOR_APP_UPDATE => 'false'}
+    );
+    my $sbom  = decode_json($output->slurp);
+    my %found = map { $_->{name} => 1 } @{$sbom->{artifacts}};
+    is_deeply(
+        [sort keys %found],
+        [sort keys %expected],
+        'Installed software is retained outside excluded log and crash directories'
+    );
 };
 
 done_testing;

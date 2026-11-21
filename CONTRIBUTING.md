@@ -37,4 +37,4 @@ make dist
 SH
 ```
 
-Compare paged result performance with `mise run benchmark 1024` and `mise run benchmark 8192`. Each run generates a synthetic Grype result under `var/mogura-results-benchmark`. Set `MOGURA_TEST_SYFT` to a Syft executable to exercise exclusion rules on temporary fixtures. The normal test suite uses local HTTP and simulated disk operations.
+Set `MOGURA_TEST_SYFT` to a Syft executable to exercise exclusion rules on temporary fixtures. The normal test suite uses local HTTP and simulated disk operations.

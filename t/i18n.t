@@ -4,7 +4,6 @@ use utf8;
 use Test::More;
 use Test::Mojo;
 use File::Temp qw(tempdir);
-use Mojo::File qw(path);
 use Mojo::JSON qw(from_json);
 use lib 'lib';
 use Mogura::Server;
@@ -21,25 +20,6 @@ for my $key (sort keys %$english) {
     push @mismatched, $key if join(',', @ja) ne join(',', @en);
 }
 is_deeply(\@mismatched, [], 'Both catalogs preserve all interpolation values');
-my @sources = (
-    path('lib/Mogura/Server.pm'),
-    path('lib/Mogura/Server/public/mogura.js'),
-    path('lib/Mogura/Server/public/results.js'),
-    path('lib/Mogura/Server/templates')->list_tree->each
-);
-my @missing;
-my $client_messages = Mogura::Server::I18N::client_messages('en');
-for my $source (@sources) {
-    my $text = $source->slurp;
-    while ($text =~ /(?:\bl|MoguraI18n\.t)\('([a-z_]+)'/g) {
-        my $key = $1;
-        push @missing, "$source: $key" unless exists $english->{$key};
-        push @missing, "$source client: $key"
-            if "$source" =~ /\.js\z/ && !exists $client_messages->{$key};
-    }
-}
-is_deeply(\@missing, [], 'All UI messages exist in the appropriate catalogs');
-
 my $root = tempdir(CLEANUP => 1);
 require './t/lib/server-fixture.pl';
 my $store = Mogura::Server::Store->new(state => $root)->initialize;

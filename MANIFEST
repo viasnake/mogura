@@ -42,7 +42,6 @@ lib/Mogura/Server/templates/scan.html.ep
 mise.toml
 package-lock.json
 package.json
-script/benchmark-results
 script/mogura
 script/styles.css
 t/cli.t
