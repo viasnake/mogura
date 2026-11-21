@@ -11,7 +11,7 @@ Mogura - Linux disk SBOM and vulnerability inspection
 =head1 SYNOPSIS
 
   mogura server
-  mogura scanner --server https://mogura.example.com --token-file /etc/mogura/scanner-token
+  sudo /opt/mogura-perl/bin/mogura scanner --server https://mogura.example.com --token-file /etc/mogura/scanner-token
 
 =head1 DESCRIPTION
 

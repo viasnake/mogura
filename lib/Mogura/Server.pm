@@ -38,8 +38,6 @@ sub startup {
     $self->_register_display_helpers;
     $self->hook(before_dispatch => sub { $self->_protect_request(@_) });
 
-    # Route handlers describe UI operations; presentation work stays
-    # outside startup so session and request protections remain easy to inspect.
     my $routes = $self->routes;
     $routes->get('/')->to(cb => sub { $self->_show_index(@_) });
     $routes->get('/inventory')->to(

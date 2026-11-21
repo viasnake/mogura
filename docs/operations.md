@@ -39,7 +39,7 @@ Install from a trusted archive. Use the system Perl and a dedicated root-owned p
 sudo /opt/mogura-perl/bin/mogura scanner --server https://mogura.example.com --token-file /etc/mogura/scanner-token
 ```
 
-The default state and mount roots are `/var/lib/mogura-scanner` and `/run/mogura-scanner`. Choose private, root-owned paths with `--state` and `--runtime`. Keep these paths, the scanner identity and the server address associated across restarts. Set `--syft` and `--grype` to trusted absolute executable paths when needed.
+Scanner state defaults to `/var/lib/mogura-scanner`. Each attached disk is mounted at `/run/mogura-scanner/mounts/<scan_id>`. Use `--state` and `--runtime` to change the state and runtime directories. Both must be private and root-owned. Keep these paths, the scanner identity and the server address associated across restarts. Set `--syft` and `--grype` to trusted absolute executable paths when needed.
 
 ## Syft and Grype
 
